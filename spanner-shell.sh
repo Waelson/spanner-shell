@@ -1,5 +1,5 @@
 #!/bin/bash
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.0.1"
 
 # =========================================
 # CURSOR: BARRA PISCANTE
@@ -120,26 +120,19 @@ clear
 # BANNER
 # =========================================
 echo -e "${GREEN}"
+echo " -----------------------------------------------------------------"
 cat << "EOF"
-  ____                                     _____ _          _ _
- / ___| _ __   __ _ _ __  _ __   ___ _ __ / ____| |__   ___| | |
- \___ \| '_ \ / _` | '_ \| '_ \ / _ \ '__| (___ | '_ \ / _ \ | |
-  ___) | |_) | (_| | | | | | | |  __/ |   \___ \| | | |  __/ | |
- |____/| .__/ \__,_|_| |_|_| |_|\___|_|   ____) | | | |\___|_|_|
-       |_|
- :: Spanner Shell ::
+/  ____                                     _____ _          _ _  \
+| / ___| _ __   __ _ _ __  _ __   ___ _ __ / ____| |__   ___| | | |
+| \___ \| '_ \ / _` | '_ \| '_ \ / _ \ '__| (___ | '_ \ / _ \ | | |
+|  ___) | |_) | (_| | | | | | | |  __/ |   \___ \| | | |  __/ | | |
+| |____/| .__/ \__,_|_| |_|_| |_|\___|_|   ____) | | | |\___|_|_| |
+\       |_|                                                       /
 EOF
+echo " -----------------------------------------------------------------"
+echo " :: v${SCRIPT_VERSION}::"
 echo -e "${NC}"
-# =========================================
-# CABEÇALHO
-# =========================================
-echo -e "${GREEN}"
-echo "------------------------------------------------------------------------------------"
-echo " ➜ Profile:  ${PROFILE_NAME} / Type: ${TYPE}"
-echo " ➜ Project:  ${PROJECT_ID} / Instance: ${INSTANCE_ID}] / Database: ${DATABASE_ID}"
-echo " ➜ Use \\help para ajuda"
-echo "------------------------------------------------------------------------------------"
-echo -e "${NC}"
+
 
 # =========================================
 # LOOP PRINCIPAL
@@ -169,8 +162,22 @@ while true; do
     echo "  \\d <tabela>       → Describe tabela"
     echo "  \\ddl <tabela>     → DDL tabela"
     echo "  \\ddl all          → DDL completo"
-    echo "  clear              → Limpar tela"
-    echo "  exit               → Sair"
+    echo "  \\cfg              → Exibe as configurações"
+    echo "  clear             → Limpar tela"
+    echo "  exit              → Sair"
+    echo -e "${NC}"
+    continue
+  fi
+
+  # \cfg
+  if [[ "$SQL" == "\cfg" ]]; then
+    echo -e "${WHITE}"
+    echo "Configurações:"
+    echo "  Profile:  ${2}"
+    echo "  Type:     ${TYPE}"
+    echo "  Project:  ${PROJECT_ID}"
+    echo "  Instance: ${INSTANCE_ID}"
+    echo "  Database: ${DATABASE_ID}"
     echo -e "${NC}"
     continue
   fi
