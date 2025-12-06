@@ -89,7 +89,5 @@ echo
 echo "👉 Agora você pode rodar:"
 echo
 echo "   spanner-shell"
-echo "   ou"
-echo "   spanner"
 echo
 echo "==============================================="
