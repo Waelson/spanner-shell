@@ -1,5 +1,5 @@
 #!/bin/bash
-SCRIPT_VERSION="1.0.2"
+SCRIPT_VERSION="1.0.3"
 
 # =========================================
 # CURSOR: BARRA PISCANTE
@@ -740,6 +740,8 @@ while true; do
     echo "  \\generate <tabela>             → Gera DML de exemplo (INSERT, UPDATE, SELECT, DELETE)"
     echo "  \\ddl <tabela>                  → DDL de uma tabela específica"
     echo "  \\ddl all                       → DDL completo"
+    echo "  \\pk <tabela>                   → Exibe a Primary Key da tabela"
+    echo "  \\indexes <tabela>              → Lista todos os índices da tabela"
     echo "  \\config                        → Exibe as configurações"
     echo "  \\import                        → Importa o conteudo de um arquivo sql com instruções DML"
     echo "  \\import-ddl                    → Importa o conteudo de um arquivo sql com instruções DDL"
@@ -1234,6 +1236,116 @@ if [[ "$SQL" =~ ^\\import($|[[:space:]]+) ]]; then
   save_to_history "$SQL"
   continue
 fi
+
+# =========================================
+# ✅ COMANDO: \pk <tabela>
+# =========================================
+if [[ "$SQL" =~ ^\\pk[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
+  TABLE_NAME="${BASH_REMATCH[1]}"
+
+  echo -e "${WHITE}🔑 Primary Key da tabela: ${TABLE_NAME}${NC}"
+  echo
+
+  OUTPUT=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --sql="
+      SELECT column_name
+      FROM information_schema.index_columns
+      WHERE table_name = '${TABLE_NAME}'
+        AND index_type = 'PRIMARY_KEY'
+      ORDER BY ordinal_position;
+    " 2>&1)
+
+  STATUS=$?
+
+  if [ $STATUS -ne 0 ]; then
+    ERROR_MSG=$(echo "$OUTPUT" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
+
+    if [ -n "$ERROR_MSG" ]; then
+      echo -e "${RED}❌ Erro: ${ERROR_MSG}${NC}"
+    else
+      echo -e "${RED}❌ Erro ao buscar PK.${NC}"
+    fi
+    echo
+    continue
+  fi
+
+  # Remove header do gcloud (se houver)
+  PK_COLUMNS=$(echo "$OUTPUT" | tail -n +2)
+
+  if [ -z "$PK_COLUMNS" ]; then
+    echo -e "${GRAY}⚠️  Nenhuma PK encontrada para a tabela '${TABLE_NAME}'.${NC}"
+  else
+    echo "$PK_COLUMNS"
+  fi
+
+  echo
+  continue
+fi
+
+
+# =========================================
+# ✅ COMANDO: \indexes <tabela>
+# =========================================
+if [[ "$SQL" =~ ^\\indexes[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
+  TABLE_NAME="${BASH_REMATCH[1]}"
+
+  echo -e "${WHITE}📑 Índices da tabela: ${TABLE_NAME}${NC}"
+  echo
+
+  OUTPUT=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --sql="
+      SELECT 
+        index_name,
+        index_type,
+        column_name,
+        ordinal_position
+      FROM information_schema.index_columns
+      WHERE table_name = '${TABLE_NAME}'
+      ORDER BY index_name, ordinal_position;
+    " 2>&1)
+
+  STATUS=$?
+
+  if [ $STATUS -ne 0 ]; then
+    ERROR_MSG=$(echo "$OUTPUT" | sed -n 's/.*\"message\":\"\([^\"]*\)\".*/\1/p')
+
+    if [ -n "$ERROR_MSG" ]; then
+      echo -e "${RED}❌ Erro: ${ERROR_MSG}${NC}"
+    else
+      echo -e "${RED}❌ Erro ao buscar índices.${NC}"
+    fi
+
+    echo
+    continue
+  fi
+
+  RESULT=$(echo "$OUTPUT" | tail -n +2)
+
+  if [ -z "$RESULT" ]; then
+    echo -e "${GRAY}⚠️  Nenhum índice encontrado para a tabela '${TABLE_NAME}'.${NC}"
+    echo
+    continue
+  fi
+
+  CURRENT_INDEX=""
+  echo "$RESULT" | while read -r INDEX_NAME INDEX_TYPE COLUMN_NAME ORDINAL; do
+    if [[ "$INDEX_NAME" != "$CURRENT_INDEX" ]]; then
+      echo
+      echo -e "${GREEN}🔹 Índice: ${INDEX_NAME} (${INDEX_TYPE})${NC}"
+      CURRENT_INDEX="$INDEX_NAME"
+    fi
+    echo "   - ${COLUMN_NAME}"
+  done
+
+  echo
+  continue
+fi
+
+
 
 
   # clear
