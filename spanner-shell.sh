@@ -1,5 +1,5 @@
 #!/bin/bash
-SCRIPT_VERSION="1.0.1"
+SCRIPT_VERSION="1.0.2"
 
 # =========================================
 # CURSOR: BARRA PISCANTE
@@ -115,7 +115,29 @@ if [[ "$TYPE" == "emulator" ]]; then
   gcloud config set api_endpoint_overrides/spanner http://localhost:9020/ --quiet
 else
   echo "✅ Usando Spanner Remoto"
+  gcloud config set auth/disable_credentials false
   gcloud config unset api_endpoint_overrides/spanner --quiet
+  #gcloud auth application-default login
+  ACTIVE_ACCOUNT=$(gcloud auth list --filter=status:ACTIVE --format="value(account)")
+
+  if [[ -z "$ACTIVE_ACCOUNT" ]]; then
+    echo -e "${RED}❌ Nenhuma autenticação ativa encontrada no gcloud.${NC}"
+    echo -e "${WHITE}➡️  Executando: gcloud auth login${NC}"
+    echo
+
+    gcloud auth login
+
+    ACTIVE_ACCOUNT=$(gcloud auth list --filter=status:ACTIVE --format="value(account)")
+
+    if [[ -z "$ACTIVE_ACCOUNT" ]]; then
+      echo -e "${RED}❌ Falha ao autenticar no gcloud.${NC}"
+      exit 1
+    fi
+  fi
+
+  echo -e "${GREEN}✅ Autenticado no gcloud como: ${ACTIVE_ACCOUNT}${NC}"
+
+
 fi
 
 gcloud config set project ${PROJECT_ID} --quiet
@@ -401,6 +423,139 @@ generate_dml_examples() {
 }
 
 # =========================================
+# FUNÇÃO: Obter chave primária de uma tabela
+# =========================================
+get_table_primary_key() {
+  local table_name="$1"
+  
+  local pk_output=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --sql="SELECT column_name FROM information_schema.index_columns WHERE table_name = '${table_name}' AND index_name = 'PRIMARY_KEY' ORDER BY ordinal_position LIMIT 1;" 2>/dev/null)
+  
+  # Parse resultado (pula cabeçalho)
+  local first_line=true
+  while IFS= read -r line; do
+    if [[ "$first_line" == true ]]; then
+      first_line=false
+      continue
+    fi
+    if [[ -n "$line" && "$line" != "column_name" ]]; then
+      local pk_col=$(echo "$line" | awk '{print $1}')
+      if [[ -n "$pk_col" ]]; then
+        echo "$pk_col"
+        return 0
+      fi
+    fi
+  done <<< "$pk_output"
+  
+  return 1
+}
+
+# =========================================
+# FUNÇÃO: Obter primeira coluna de uma tabela
+# =========================================
+get_table_first_column() {
+  local table_name="$1"
+  
+  local columns_output=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --sql="SELECT column_name FROM information_schema.columns WHERE table_name = '${table_name}' ORDER BY ordinal_position LIMIT 1;" 2>/dev/null)
+  
+  # Parse resultado (pula cabeçalho)
+  local first_line=true
+  while IFS= read -r line; do
+    if [[ "$first_line" == true ]]; then
+      first_line=false
+      continue
+    fi
+    if [[ -n "$line" && "$line" != "column_name" ]]; then
+      local col_name=$(echo "$line" | awk '{print $1}')
+      if [[ -n "$col_name" ]]; then
+        echo "$col_name"
+        return 0
+      fi
+    fi
+  done <<< "$columns_output"
+  
+  return 1
+}
+
+# =========================================
+# FUNÇÃO: Validar se coluna existe na tabela
+# =========================================
+validate_column_exists() {
+  local table_name="$1"
+  local column_name="$2"
+  
+  local result=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --sql="SELECT COUNT(*) as cnt FROM information_schema.columns WHERE table_name = '${table_name}' AND column_name = '${column_name}';" 2>/dev/null)
+  
+  # Parse resultado (procura por "1" ou número > 0)
+  if [[ "$result" =~ [1-9] ]]; then
+    return 0
+  fi
+  
+  return 1
+}
+
+# =========================================
+# FUNÇÃO: Obter coluna padrão para ordenação
+# =========================================
+get_default_order_column() {
+  local table_name="$1"
+  
+  # Tenta obter chave primária primeiro
+  local pk_col=$(get_table_primary_key "$table_name")
+  if [[ -n "$pk_col" ]]; then
+    echo "$pk_col"
+    return 0
+  fi
+  
+  # Se não houver chave primária, usa primeira coluna
+  local first_col=$(get_table_first_column "$table_name")
+  if [[ -n "$first_col" ]]; then
+    echo "$first_col"
+    return 0
+  fi
+  
+  return 1
+}
+
+# =========================================
+# FUNÇÃO: Obter tipo de uma coluna
+# =========================================
+get_column_type() {
+  local table_name="$1"
+  local column_name="$2"
+  
+  local result=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --sql="SELECT spanner_type FROM information_schema.columns WHERE table_name = '${table_name}' AND column_name = '${column_name}';" 2>/dev/null)
+  
+  # Parse resultado (pula cabeçalho)
+  local first_line=true
+  while IFS= read -r line; do
+    if [[ "$first_line" == true ]]; then
+      first_line=false
+      continue
+    fi
+    if [[ -n "$line" && "$line" != "spanner_type" ]]; then
+      # Remove tamanho do tipo (ex: STRING(128) -> STRING)
+      local base_type=$(echo "$line" | sed 's/([0-9]*)//g' | tr '[:lower:]' '[:upper:]')
+      echo "$base_type"
+      return 0
+    fi
+  done <<< "$result"
+  
+  return 1
+}
+
+# =========================================
 # FUNÇÃO: Salvar comando no histórico
 # =========================================
 save_to_history() {
@@ -576,20 +731,23 @@ while true; do
   if [[ "$SQL" == "\help" || "$SQL" == "\h" ]]; then
     echo -e "${WHITE}"
     echo "Comandos disponíveis:"
-    echo "  \\dt                → Lista tabelas"
-    echo "  \\d <tabela>        → Describe tabela"
-    echo "  \\count <tabela>    → Conta registros de uma tabela"
-    echo "  \\sample <tabela>   → Mostra registros de exemplo (padrão: 10)"
-    echo "  \\generate <tabela> → Gera DML de exemplo (INSERT, UPDATE, SELECT, DELETE)"
-    echo "  \\ddl <tabela>      → DDL de uma tabela específica"
-    echo "  \\ddl all           → DDL completo"
-    echo "  \\config            → Exibe as configurações"
-    echo "  \\import            → Importa o conteudo de um arquivo sql"
-    echo "  \\repeat <n> <cmd>  → Executa comando N vezes"
-    echo "  \\history [n]       → Exibe últimos N comandos (padrão: 20)"
-    echo "  \\history clear     → Limpa o histórico"
-    echo "  clear              → Limpar tela"
-    echo "  exit               → Sair"
+    echo "  \\dt                            → Lista tabelas"
+    echo "  \\d <tabela>                    → Describe tabela"
+    echo "  \\count <tabela>                → Conta registros de uma tabela"
+    echo "  \\sample <tabela>               → Mostra registros de exemplo (padrão: 10)"
+    echo "  \\tail <tabela> [n] [coluna]    → Mostra últimos N registros (padrão: 10, ordenado por PK ou coluna)"
+    echo "  \\tail -f <tabela> [n] [coluna] → Monitora novos registros a cada 5 segundos"
+    echo "  \\generate <tabela>             → Gera DML de exemplo (INSERT, UPDATE, SELECT, DELETE)"
+    echo "  \\ddl <tabela>                  → DDL de uma tabela específica"
+    echo "  \\ddl all                       → DDL completo"
+    echo "  \\config                        → Exibe as configurações"
+    echo "  \\import                        → Importa o conteudo de um arquivo sql com instruções DML"
+    echo "  \\import-ddl                    → Importa o conteudo de um arquivo sql com instruções DDL"
+    echo "  \\repeat <n> <cmd>              → Executa comando N vezes"
+    echo "  \\history [n]                   → Exibe últimos N comandos (padrão: 20)"
+    echo "  \\history clear                 → Limpa o histórico"
+    echo "  clear                          → Limpar tela"
+    echo "  exit                           → Sair"
     echo -e "${NC}"
     save_to_history "$SQL"
     continue
@@ -740,6 +898,196 @@ while true; do
     continue
   fi
 
+  # \tail -f <tabela> [n] [coluna] (deve ser verificado antes de \tail básico)
+  if [[ "$SQL" =~ ^\\tail[[:space:]]+-f[[:space:]]+([a-zA-Z0-9_]+)([[:space:]]+([0-9]+))?([[:space:]]+([a-zA-Z0-9_]+))?$ ]]; then
+    TABLE_NAME="${BASH_REMATCH[1]}"
+    TAIL_SIZE="${BASH_REMATCH[3]:-10}"
+    ORDER_COLUMN="${BASH_REMATCH[5]}"
+    
+    # Valida tamanho
+    if [[ "$TAIL_SIZE" -lt 1 || "$TAIL_SIZE" -gt 1000 ]]; then
+      echo -e "${RED}❌ Número de registros deve estar entre 1 e 1000${NC}"
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    # Determina coluna de ordenação
+    if [[ -z "$ORDER_COLUMN" ]]; then
+      ORDER_COLUMN=$(get_default_order_column "$TABLE_NAME")
+      if [[ -z "$ORDER_COLUMN" ]]; then
+        echo -e "${RED}❌ Não foi possível determinar coluna de ordenação para a tabela '${TABLE_NAME}'${NC}"
+        save_to_history "$SQL"
+        continue
+      fi
+    else
+      # Valida se coluna existe
+      if ! validate_column_exists "$TABLE_NAME" "$ORDER_COLUMN"; then
+        echo -e "${RED}❌ Coluna '${ORDER_COLUMN}' não encontrada na tabela '${TABLE_NAME}'${NC}"
+        save_to_history "$SQL"
+        continue
+      fi
+    fi
+    
+    # Obtém tipo da coluna de ordenação
+    COLUMN_TYPE=$(get_column_type "$TABLE_NAME" "$ORDER_COLUMN")
+    
+    echo -e "${WHITE}"
+    echo "Monitorando novos registros na tabela '${TABLE_NAME}' (a cada 5 segundos)..."
+    echo "Ordenado por: ${ORDER_COLUMN} (${COLUMN_TYPE})"
+    echo "Pressione Ctrl+C para parar"
+    echo "----------------------------------------"
+    echo -e "${NC}"
+    
+    # Variável para armazenar último valor visto
+    LAST_VALUE=""
+    FIRST_RUN=true
+    
+    # Handler para interrupção
+    tail_interrupted=false
+    tail_interrupt_handler() {
+      tail_interrupted=true
+      echo ""
+      echo -e "${GREEN}✅ Monitoramento interrompido${NC}"
+    }
+    trap tail_interrupt_handler SIGINT
+    
+    while true; do
+      # Verifica se foi interrompido
+      if [[ "$tail_interrupted" == true ]]; then
+        trap - SIGINT  # Remove o handler
+        break
+      fi
+      
+      # Monta query SQL
+      if [[ "$FIRST_RUN" == true ]]; then
+        # Primeira execução: mostra últimos N registros e obtém o maior valor
+        SQL_QUERY="SELECT * FROM ${TABLE_NAME} ORDER BY ${ORDER_COLUMN} DESC LIMIT ${TAIL_SIZE};"
+        FIRST_RUN=false
+      else
+        # Execuções subsequentes: mostra apenas registros novos
+        if [[ -n "$LAST_VALUE" ]]; then
+          # Monta comparação baseada no tipo
+          case "$COLUMN_TYPE" in
+            "STRING"|"BYTES"|"DATE"|"TIMESTAMP")
+              SQL_QUERY="SELECT * FROM ${TABLE_NAME} WHERE ${ORDER_COLUMN} > '${LAST_VALUE}' ORDER BY ${ORDER_COLUMN} DESC LIMIT ${TAIL_SIZE};"
+              ;;
+            "INT64"|"FLOAT64")
+              SQL_QUERY="SELECT * FROM ${TABLE_NAME} WHERE ${ORDER_COLUMN} > ${LAST_VALUE} ORDER BY ${ORDER_COLUMN} DESC LIMIT ${TAIL_SIZE};"
+              ;;
+            *)
+              # Para outros tipos, tenta com aspas
+              SQL_QUERY="SELECT * FROM ${TABLE_NAME} WHERE ${ORDER_COLUMN} > '${LAST_VALUE}' ORDER BY ${ORDER_COLUMN} DESC LIMIT ${TAIL_SIZE};"
+              ;;
+          esac
+        else
+          SQL_QUERY="SELECT * FROM ${TABLE_NAME} ORDER BY ${ORDER_COLUMN} DESC LIMIT ${TAIL_SIZE};"
+        fi
+      fi
+      
+      # Executa query
+      OUTPUT=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+        --instance=${INSTANCE_ID} \
+        --quiet \
+        --sql="$SQL_QUERY" 2>&1)
+      
+      STATUS=$?
+      
+      if [ $STATUS -eq 0 ]; then
+        # Verifica se há resultados
+        if [[ -n "$OUTPUT" && ! "$OUTPUT" =~ ^[[:space:]]*$ ]]; then
+          # Obtém o maior valor da coluna de ordenação dos resultados atuais
+          # Faz uma query simples que retorna apenas o maior valor atual
+          MAX_VALUE_QUERY="SELECT ${ORDER_COLUMN} FROM ${TABLE_NAME} ORDER BY ${ORDER_COLUMN} DESC LIMIT 1;"
+          MAX_OUTPUT=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+            --instance=${INSTANCE_ID} \
+            --quiet \
+            --sql="$MAX_VALUE_QUERY" 2>/dev/null)
+          
+          # Extrai o valor máximo (pula cabeçalho)
+          NEW_LAST_VALUE=""
+          if [[ -n "$MAX_OUTPUT" ]]; then
+            MAX_LINE=$(echo "$MAX_OUTPUT" | grep -v "^${ORDER_COLUMN}" | grep -v "^$" | head -n 1)
+            if [[ -n "$MAX_LINE" ]]; then
+              NEW_LAST_VALUE=$(echo "$MAX_LINE" | awk '{print $1}' | sed "s/'//g" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            fi
+          fi
+          
+          # Mostra resultados se for primeira execução ou se há novos registros
+          if [[ -z "$LAST_VALUE" ]]; then
+            # Primeira execução: mostra todos os últimos N registros
+            echo -e "${WHITE}$OUTPUT${NC}"
+            if [[ -n "$NEW_LAST_VALUE" && "$NEW_LAST_VALUE" != "NULL" ]]; then
+              LAST_VALUE="$NEW_LAST_VALUE"
+            fi
+          elif [[ -n "$NEW_LAST_VALUE" && "$NEW_LAST_VALUE" != "NULL" && "$NEW_LAST_VALUE" != "$LAST_VALUE" ]]; then
+            # Execuções subsequentes: mostra apenas se houver novos registros
+            echo -e "${GREEN}[$(date +%H:%M:%S)] Novos registros encontrados:${NC}"
+            echo -e "${WHITE}$OUTPUT${NC}"
+            LAST_VALUE="$NEW_LAST_VALUE"
+          fi
+        fi
+      else
+        # Em caso de erro, tenta extrair mensagem
+        ERROR_MSG=$(echo "$OUTPUT" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
+        if [[ -n "$ERROR_MSG" ]]; then
+          echo -e "${RED}❌ Erro: ${ERROR_MSG}${NC}"
+        else
+          echo -e "${RED}❌ Erro ao executar query${NC}"
+        fi
+        # Continua mesmo com erro
+      fi
+      
+      # Aguarda 5 segundos
+      sleep 5
+    done
+    
+    trap - SIGINT  # Remove o handler ao sair
+    save_to_history "$SQL"
+    continue
+  fi
+
+  # \tail <tabela> [n] [coluna]
+  if [[ "$SQL" =~ ^\\tail[[:space:]]+([a-zA-Z0-9_]+)([[:space:]]+([0-9]+))?([[:space:]]+([a-zA-Z0-9_]+))?$ ]]; then
+    TABLE_NAME="${BASH_REMATCH[1]}"
+    TAIL_SIZE="${BASH_REMATCH[3]:-10}"
+    ORDER_COLUMN="${BASH_REMATCH[5]}"
+    
+    # Valida tamanho
+    if [[ "$TAIL_SIZE" -lt 1 || "$TAIL_SIZE" -gt 1000 ]]; then
+      echo -e "${RED}❌ Número de registros deve estar entre 1 e 1000${NC}"
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    # Determina coluna de ordenação
+    if [[ -z "$ORDER_COLUMN" ]]; then
+      ORDER_COLUMN=$(get_default_order_column "$TABLE_NAME")
+      if [[ -z "$ORDER_COLUMN" ]]; then
+        echo -e "${RED}❌ Não foi possível determinar coluna de ordenação para a tabela '${TABLE_NAME}'${NC}"
+        save_to_history "$SQL"
+        continue
+      fi
+    else
+      # Valida se coluna existe
+      if ! validate_column_exists "$TABLE_NAME" "$ORDER_COLUMN"; then
+        echo -e "${RED}❌ Coluna '${ORDER_COLUMN}' não encontrada na tabela '${TABLE_NAME}'${NC}"
+        save_to_history "$SQL"
+        continue
+      fi
+    fi
+    
+    echo -e "${WHITE}"
+    echo "Mostrando últimos ${TAIL_SIZE} registros da tabela '${TABLE_NAME}' (ordenado por ${ORDER_COLUMN}):"
+    echo "----------------------------------------"
+    gcloud spanner databases execute-sql ${DATABASE_ID} \
+      --instance=${INSTANCE_ID} \
+      --quiet \
+      --sql="SELECT * FROM ${TABLE_NAME} ORDER BY ${ORDER_COLUMN} DESC LIMIT ${TAIL_SIZE};"
+    echo -e "${NC}"
+    save_to_history "$SQL"
+    continue
+  fi
+
   # \generate <tabela>
   if [[ "$SQL" =~ ^\\generate[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
     TABLE_NAME="${BASH_REMATCH[1]}"
@@ -805,6 +1153,45 @@ if [[ "$SQL" =~ ^\\repeat[[:space:]]+([0-9]+)[[:space:]]+(.+)$ ]]; then
   done
   
   echo
+  save_to_history "$SQL"
+  continue
+fi
+
+# =========================================
+# ✅ COMANDO: \import-ddl <arquivo.sql>
+# =========================================
+if [[ "$SQL" =~ ^\\import-ddl($|[[:space:]]+) ]]; then
+
+  # Remove o comando "\import" e captura apenas o path
+  FILE_PATH="$(echo "$SQL" | sed 's/^\\import-ddl[[:space:]]*//')"
+
+  # ✅ 1. Valida se o caminho foi informado
+  if [[ -z "$FILE_PATH" ]]; then
+    echo -e "${RED}❌ Uso correto: \\import-ddl <caminho-do-arquivo.sql>${NC}"
+    continue
+  fi
+
+  # ✅ 2. Valida se o arquivo existe
+  if [[ ! -f "$FILE_PATH" ]]; then
+    echo -e "${RED}❌ Arquivo não encontrado: ${FILE_PATH}${NC}"
+    continue
+  fi
+
+  # ✅ 3. Executa o arquivo
+  echo -e "${WHITE}📂 Carregando arquivo: ${FILE_PATH}${NC}"
+  echo
+
+  gcloud spanner databases ddl update ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --ddl="$(cat "$FILE_PATH")"
+
+  if [[ $? -eq 0 ]]; then
+    echo -e "${GREEN}✅ Arquivo importado com sucesso!${NC}"
+  else
+    echo -e "${RED}❌ Erro ao executar o arquivo.${NC}"
+  fi
+
   save_to_history "$SQL"
   continue
 fi
