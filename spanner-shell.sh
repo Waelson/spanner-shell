@@ -476,15 +476,10 @@ fi
 # =========================================
 while true; do
   # Configura PS1 com códigos ANSI envolvidos em \[ \] 
-  # Isso diz ao readline para não contar esses caracteres no tamanho do prompt
-  # O \[ e \] são essenciais para que o readline calcule corretamente o tamanho
-  # quando navegamos pelo histórico com as setas
   export PS1="\[${GREEN}\]spanner> \[${WHITE}\]"
   
-  # Usa read -e com -p para especificar o prompt
-  # O -p permite que o readline saiba qual é o prompt e calcule corretamente
-  # O histórico está isolado e contém apenas comandos do spanner-shell
-  if ! IFS= read -r -e -p "$(printf "${GREEN}spanner> ${WHITE}")" SQL; then
+  # Lê primeira linha para detectar tipo de comando
+  if ! IFS= read -r -e -p "$(printf "${GREEN}spanner> ${WHITE}")" FIRST_LINE; then
     # Restaura histórico original antes de sair
     export HISTFILE="$_OLD_HISTFILE"
     export HISTSIZE="$_OLD_HISTSIZE"
@@ -492,15 +487,77 @@ while true; do
     echo "✅ Encerrando Spanner Shell..."
     exit 0
   fi
-
+  
   echo -ne "${NC}"
   
-  # Remove espaços em branco no início e fim
-  SQL=$(printf '%s' "$SQL" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  # Remove espaços e códigos ANSI da primeira linha
+  FIRST_LINE=$(printf '%s' "$FIRST_LINE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  FIRST_LINE=$(clean_ansi "$FIRST_LINE")
+  FIRST_LINE=$(clean_ansi "$FIRST_LINE")
   
-  # Remove códigos de escape ANSI usando a função auxiliar (múltiplas passadas para garantir)
-  SQL=$(clean_ansi "$SQL")
-  SQL=$(clean_ansi "$SQL")  # Segunda passada para garantir remoção completa
+  # Ignora linhas vazias
+  if [[ -z "${FIRST_LINE// }" ]]; then
+    continue
+  fi
+  
+  # Detecta se é comando especial (começa com \) ou comando de controle
+  if [[ "$FIRST_LINE" =~ ^\\ ]] || \
+     [[ "$FIRST_LINE" == "exit" ]] || \
+     [[ "$FIRST_LINE" == "clear" ]] || \
+     [[ "$FIRST_LINE" == "\help" ]] || \
+     [[ "$FIRST_LINE" == "\h" ]]; then
+    # Comando especial: linha única
+    SQL="$FIRST_LINE"
+  else
+    # Comando SQL: permite multi-linha
+    # Remove espaços do final e verifica se termina com ;
+    FIRST_LINE_TRIMMED=$(echo "$FIRST_LINE" | sed 's/[[:space:]]*$//')
+    if [[ "$FIRST_LINE_TRIMMED" == *";" ]]; then
+      # Já termina com ; - executa imediatamente
+      SQL=$(echo "$FIRST_LINE_TRIMMED" | sed 's/[[:space:]]*;[[:space:]]*$//')
+    else
+      # Continua lendo até encontrar ;
+      SQL_BUFFER="$FIRST_LINE"
+      while true; do
+        if ! IFS= read -r -e -p "$(printf "${GRAY}    ... ${WHITE}")" NEXT_LINE; then
+          # Se EOF (Ctrl+D), cancela
+          SQL=""
+          break
+        fi
+        echo -ne "${NC}"
+        
+        # Remove espaços e códigos ANSI
+        NEXT_LINE=$(printf '%s' "$NEXT_LINE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        NEXT_LINE=$(clean_ansi "$NEXT_LINE")
+        NEXT_LINE=$(clean_ansi "$NEXT_LINE")
+        
+        # Se linha vazia, adiciona espaço e continua
+        if [[ -z "$NEXT_LINE" ]]; then
+          SQL_BUFFER+=" "
+          continue
+        fi
+        
+        # Adiciona linha ao buffer
+        SQL_BUFFER+=" $NEXT_LINE"
+        
+        # Remove espaços do final e verifica se termina com ;
+        SQL_BUFFER_TRIMMED=$(echo "$SQL_BUFFER" | sed 's/[[:space:]]*$//')
+        if [[ "$SQL_BUFFER_TRIMMED" == *";" ]]; then
+          # Remove ; final
+          SQL=$(echo "$SQL_BUFFER_TRIMMED" | sed 's/[[:space:]]*;[[:space:]]*$//')
+          break
+        fi
+      done
+      
+      # Se SQL vazio (cancelado), continua loop
+      if [[ -z "$SQL" ]]; then
+        continue
+      fi
+    fi
+  fi
+  
+  # Remove espaços em branco no início e fim do SQL final
+  SQL=$(printf '%s' "$SQL" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
   
   # Ignora comandos vazios após limpeza
   if [[ -z "${SQL// }" ]]; then
@@ -527,7 +584,8 @@ while true; do
     echo "  \\ddl <tabela>     → DDL de uma tabela específica"
     echo "  \\ddl all          → DDL completo"
     echo "  \\cfg              → Exibe as configurações"
-    echo "  \\load             → Executa o conteudo de um arquivo sql"
+    echo "  \\import           → Importa o conteudo de um arquivo sql"
+    echo "  \\repeat <n> <cmd> → Executa comando N vezes"
     echo "  \\history [n]      → Exibe últimos N comandos (padrão: 20)"
     echo "  \\history clear    → Limpa o histórico"
     echo "  clear             → Limpar tela"
@@ -691,16 +749,77 @@ while true; do
   fi
 
 # =========================================
-# ✅ COMANDO: \load <arquivo.sql>
+# ✅ COMANDO: \repeat <n> <comando>
 # =========================================
-if [[ "$SQL" =~ ^\\load($|[[:space:]]+) ]]; then
+if [[ "$SQL" =~ ^\\repeat[[:space:]]+([0-9]+)[[:space:]]+(.+)$ ]]; then
+  REPEAT_COUNT="${BASH_REMATCH[1]}"
+  REPEAT_CMD="${BASH_REMATCH[2]}"
+  
+  # Valida número de repetições
+  if [[ "$REPEAT_COUNT" -lt 1 || "$REPEAT_COUNT" -gt 100 ]]; then
+    echo -e "${RED}❌ Número de repetições deve estar entre 1 e 100${NC}"
+    save_to_history "$SQL"
+    continue
+  fi
+  
+  echo -e "${WHITE}"
+  echo "Executando comando ${REPEAT_COUNT} vez(es):"
+  echo "----------------------------------------"
+  
+  # Mostra o comando completo na primeira vez (truncado se muito longo)
+  if [[ ${#REPEAT_CMD} -gt 80 ]]; then
+    echo -e "${GRAY}Comando:${NC} ${WHITE}${REPEAT_CMD:0:77}...${NC}"
+  else
+    echo -e "${GRAY}Comando:${NC} ${WHITE}${REPEAT_CMD}${NC}"
+  fi
+  echo
+  
+  for ((i=1; i<=REPEAT_COUNT; i++)); do
+    echo -e "${GRAY}[${i}/${REPEAT_COUNT}]${NC}"
+    
+    # Executa o comando como SQL (assume que é uma query SQL)
+    echo -e "${WHITE}"
+    OUTPUT=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+      --instance=${INSTANCE_ID} \
+      --quiet \
+      --sql="$REPEAT_CMD" 2>&1)
+    
+    STATUS=$?
+    
+    if [ $STATUS -ne 0 ]; then
+      ERROR_MSG=$(echo "$OUTPUT" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
+      if [ -n "$ERROR_MSG" ]; then
+        echo -e "${RED}❌ Erro: ${ERROR_MSG}${NC}"
+      else
+        echo -e "${RED}❌ Erro: ${OUTPUT}${NC}"
+      fi
+    else
+      echo "$OUTPUT"
+    fi
+    echo -e "${NC}"
+    
+    # Adiciona separador entre execuções (exceto na última)
+    if [[ $i -lt $REPEAT_COUNT ]]; then
+      echo "----------------------------------------"
+    fi
+  done
+  
+  echo
+  save_to_history "$SQL"
+  continue
+fi
 
-  # Remove o comando "\load" e captura apenas o path
-  FILE_PATH="$(echo "$SQL" | sed 's/^\\load[[:space:]]*//')"
+# =========================================
+# ✅ COMANDO: \import <arquivo.sql>
+# =========================================
+if [[ "$SQL" =~ ^\\import($|[[:space:]]+) ]]; then
+
+  # Remove o comando "\import" e captura apenas o path
+  FILE_PATH="$(echo "$SQL" | sed 's/^\\import[[:space:]]*//')"
 
   # ✅ 1. Valida se o caminho foi informado
   if [[ -z "$FILE_PATH" ]]; then
-    echo -e "${RED}❌ Uso correto: \\load <caminho-do-arquivo.sql>${NC}"
+    echo -e "${RED}❌ Uso correto: \\import <caminho-do-arquivo.sql>${NC}"
     continue
   fi
 
@@ -720,7 +839,7 @@ if [[ "$SQL" =~ ^\\load($|[[:space:]]+) ]]; then
     --sql="$(cat "$FILE_PATH")"
 
   if [[ $? -eq 0 ]]; then
-    echo -e "${GREEN}✅ Arquivo executado com sucesso!${NC}"
+    echo -e "${GREEN}✅ Arquivo importado com sucesso!${NC}"
   else
     echo -e "${RED}❌ Erro ao executar o arquivo.${NC}"
   fi
