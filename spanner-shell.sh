@@ -521,6 +521,8 @@ while true; do
     echo "Comandos disponíveis:"
     echo "  \\dt               → Lista tabelas"
     echo "  \\d <tabela>       → Describe tabela"
+    echo "  \\count <tabela>   → Conta registros de uma tabela"
+    echo "  \\sample <tabela>  → Mostra registros de exemplo (padrão: 10)"
     echo "  \\g <tabela>       → Gera DML de exemplo (INSERT, UPDATE, SELECT, DELETE)"
     echo "  \\ddl <tabela>     → DDL de uma tabela específica"
     echo "  \\ddl all          → DDL completo"
@@ -637,6 +639,44 @@ while true; do
       --instance=${INSTANCE_ID} \
       --quiet \
       --sql="SELECT column_name, spanner_type, is_nullable FROM information_schema.columns WHERE table_name = '${TABLE_NAME}' ORDER BY ordinal_position;"
+    echo -e "${NC}"
+    save_to_history "$SQL"
+    continue
+  fi
+
+  # \count <tabela>
+  if [[ "$SQL" =~ ^\\count[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
+    TABLE_NAME="${BASH_REMATCH[1]}"
+    echo -e "${WHITE}"
+    echo "Contando registros na tabela '${TABLE_NAME}'..."
+    gcloud spanner databases execute-sql ${DATABASE_ID} \
+      --instance=${INSTANCE_ID} \
+      --quiet \
+      --sql="SELECT COUNT(*) as total FROM ${TABLE_NAME};"
+    echo -e "${NC}"
+    save_to_history "$SQL"
+    continue
+  fi
+
+  # \sample <tabela> [n]
+  if [[ "$SQL" =~ ^\\sample[[:space:]]+([a-zA-Z0-9_]+)([[:space:]]+([0-9]+))?$ ]]; then
+    TABLE_NAME="${BASH_REMATCH[1]}"
+    SAMPLE_SIZE="${BASH_REMATCH[3]:-10}"  # Padrão: 10 se não especificado
+    
+    # Valida tamanho do sample
+    if [[ "$SAMPLE_SIZE" -lt 1 || "$SAMPLE_SIZE" -gt 1000 ]]; then
+      echo -e "${RED}❌ Tamanho do sample deve estar entre 1 e 1000${NC}"
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    echo -e "${WHITE}"
+    echo "Mostrando ${SAMPLE_SIZE} registros da tabela '${TABLE_NAME}':"
+    echo "----------------------------------------"
+    gcloud spanner databases execute-sql ${DATABASE_ID} \
+      --instance=${INSTANCE_ID} \
+      --quiet \
+      --sql="SELECT * FROM ${TABLE_NAME} LIMIT ${SAMPLE_SIZE};"
     echo -e "${NC}"
     save_to_history "$SQL"
     continue
