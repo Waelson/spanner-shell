@@ -576,20 +576,20 @@ while true; do
   if [[ "$SQL" == "\help" || "$SQL" == "\h" ]]; then
     echo -e "${WHITE}"
     echo "Comandos disponíveis:"
-    echo "  \\dt               → Lista tabelas"
-    echo "  \\d <tabela>       → Describe tabela"
-    echo "  \\count <tabela>   → Conta registros de uma tabela"
-    echo "  \\sample <tabela>  → Mostra registros de exemplo (padrão: 10)"
-    echo "  \\g <tabela>       → Gera DML de exemplo (INSERT, UPDATE, SELECT, DELETE)"
-    echo "  \\ddl <tabela>     → DDL de uma tabela específica"
-    echo "  \\ddl all          → DDL completo"
-    echo "  \\cfg              → Exibe as configurações"
-    echo "  \\import           → Importa o conteudo de um arquivo sql"
-    echo "  \\repeat <n> <cmd> → Executa comando N vezes"
-    echo "  \\history [n]      → Exibe últimos N comandos (padrão: 20)"
-    echo "  \\history clear    → Limpa o histórico"
-    echo "  clear             → Limpar tela"
-    echo "  exit              → Sair"
+    echo "  \\dt                → Lista tabelas"
+    echo "  \\d <tabela>        → Describe tabela"
+    echo "  \\count <tabela>    → Conta registros de uma tabela"
+    echo "  \\sample <tabela>   → Mostra registros de exemplo (padrão: 10)"
+    echo "  \\generate <tabela> → Gera DML de exemplo (INSERT, UPDATE, SELECT, DELETE)"
+    echo "  \\ddl <tabela>      → DDL de uma tabela específica"
+    echo "  \\ddl all           → DDL completo"
+    echo "  \\config            → Exibe as configurações"
+    echo "  \\import            → Importa o conteudo de um arquivo sql"
+    echo "  \\repeat <n> <cmd>  → Executa comando N vezes"
+    echo "  \\history [n]       → Exibe últimos N comandos (padrão: 20)"
+    echo "  \\history clear     → Limpa o histórico"
+    echo "  clear              → Limpar tela"
+    echo "  exit               → Sair"
     echo -e "${NC}"
     save_to_history "$SQL"
     continue
@@ -622,8 +622,8 @@ while true; do
     continue
   fi
 
-  # \cfg
-  if [[ "$SQL" == "\cfg" ]]; then
+  # \config
+  if [[ "$SQL" == "\config" ]]; then
     echo -e "${WHITE}"
     echo "Configurações:"
     echo "  Profile:  ${2}"
@@ -740,8 +740,8 @@ while true; do
     continue
   fi
 
-  # \g <tabela>
-  if [[ "$SQL" =~ ^\\g[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
+  # \generate <tabela>
+  if [[ "$SQL" =~ ^\\generate[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
     TABLE_NAME="${BASH_REMATCH[1]}"
     generate_dml_examples "$TABLE_NAME"
     save_to_history "$SQL"
