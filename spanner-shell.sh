@@ -1,5 +1,5 @@
 #!/bin/bash
-SCRIPT_VERSION="1.0.3"
+SCRIPT_VERSION="1.0.4"
 
 # =========================================
 # CURSOR: BARRA PISCANTE
@@ -738,6 +738,7 @@ while true; do
     echo "  \\tail <tabela> [n] [coluna]    → Mostra últimos N registros (padrão: 10, ordenado por PK ou coluna)"
     echo "  \\tail -f <tabela> [n] [coluna] → Monitora novos registros a cada 5 segundos"
     echo "  \\generate <tabela>             → Gera DML de exemplo (INSERT, UPDATE, SELECT, DELETE)"
+    echo "  \\diff <tabela> <id1> <id2>     → Compara dois registros e mostra diferenças"
     echo "  \\ddl <tabela>                  → DDL de uma tabela específica"
     echo "  \\ddl all                       → DDL completo"
     echo "  \\pk <tabela>                   → Exibe a Primary Key da tabela"
@@ -1344,6 +1345,235 @@ if [[ "$SQL" =~ ^\\indexes[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
   echo
   continue
 fi
+
+# =========================================
+# ✅ COMANDO: \diff <tabela> <id1> <id2>
+# =========================================
+if [[ "$SQL" =~ ^\\diff($|[[:space:]]+) ]]; then
+
+  # Remove o comando "\diff" e captura apenas os parâmetros
+  PARAMS=$(echo "$SQL" | sed 's/^\\diff[[:space:]]*//')
+
+  # ✅ Valida quantidade de parâmetros
+  PARAM_COUNT=$(echo "$PARAMS" | wc -w | tr -d ' ')
+
+  if [[ $PARAM_COUNT -ne 3 ]]; then
+    echo -e "${RED}❌ Uso correto: \\diff <tabela> <id1> <id2>${NC}"
+    continue
+  fi
+
+  TABLE_NAME=$(echo "$PARAMS" | awk '{print $1}')
+  ID1_RAW=$(echo "$PARAMS" | awk '{print $2}')
+  ID2_RAW=$(echo "$PARAMS" | awk '{print $3}')
+
+  # Verifica se o jq está instalado
+  if ! command -v jq >/dev/null 2>&1; then
+    echo -e "${RED}❌ jq não está instalado.${NC}"
+    echo -e "${WHITE}➡️  Instale com:${NC}"
+    echo -e "${GRAY}   macOS: brew install jq${NC}"
+    echo -e "${GRAY}   Linux: sudo apt-get install jq (ou sudo yum install jq)${NC}"
+    continue
+  fi
+
+  echo -e "${WHITE}🔍 Comparando registros da tabela: ${TABLE_NAME}${NC}"
+  echo "   ID1: ${ID1_RAW}"
+  echo "   ID2: ${ID2_RAW}"
+  echo
+
+  # =========================================
+  # 🔎 DETECTA TIPO DA PK (STRING ou INT64)
+  # =========================================
+  PK_INFO=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --sql="
+      SELECT c.column_name, c.spanner_type
+      FROM information_schema.index_columns i
+      JOIN information_schema.columns c
+        ON i.table_name = c.table_name
+       AND i.column_name = c.column_name
+      WHERE i.table_name='${TABLE_NAME}'
+        AND i.index_type='PRIMARY_KEY'
+      ORDER BY i.ordinal_position
+      LIMIT 1;
+    ")
+
+  PK_COLUMN=$(echo "$PK_INFO" | tail -n +2 | awk '{print $1}')
+  PK_TYPE=$(echo "$PK_INFO" | tail -n +2 | awk '{print $2}')
+
+  if [[ -z "$PK_COLUMN" || -z "$PK_TYPE" ]]; then
+    echo -e "${RED}❌ Não foi possível detectar a PK da tabela.${NC}"
+    continue
+  fi
+
+  # =========================================
+  # 🔐 AJUSTA FORMATO DO ID CONFORME O TIPO
+  # =========================================
+  if [[ "$PK_TYPE" == "STRING" ]]; then
+    ID1="'${ID1_RAW}'"
+    ID2="'${ID2_RAW}'"
+  else
+    # INT64
+    if [[ ! "$ID1_RAW" =~ ^[0-9]+$ || ! "$ID2_RAW" =~ ^[0-9]+$ ]]; then
+      echo -e "${RED}❌ A PK é numérica (INT64). Os IDs devem ser números.${NC}"
+      continue
+    fi
+    ID1="${ID1_RAW}"
+    ID2="${ID2_RAW}"
+  fi
+
+  # =========================================
+  # 🔎 OBTÉM NOMES DAS COLUNAS DA TABELA
+  # =========================================
+  COLUMNS_INFO=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --sql="SELECT column_name FROM information_schema.columns WHERE table_name = '${TABLE_NAME}' ORDER BY ordinal_position;" 2>/dev/null)
+
+  # Extrai nomes das colunas (pula cabeçalho)
+  COLUMN_NAMES=()
+  FIRST_LINE=true
+  while IFS= read -r line; do
+    if [[ "$FIRST_LINE" == true ]]; then
+      FIRST_LINE=false
+      continue
+    fi
+    if [[ -n "$line" && "$line" != "column_name" ]]; then
+      COL_NAME=$(echo "$line" | awk '{print $1}')
+      if [[ -n "$COL_NAME" ]]; then
+        COLUMN_NAMES+=("$COL_NAME")
+      fi
+    fi
+  done <<< "$COLUMNS_INFO"
+
+  if [[ ${#COLUMN_NAMES[@]} -eq 0 ]]; then
+    echo -e "${RED}❌ Não foi possível obter as colunas da tabela.${NC}"
+    continue
+  fi
+
+  # =========================================
+  # 🔎 BUSCA OS DOIS REGISTROS
+  # =========================================
+  ROW1_RAW=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --format=json \
+    --sql="SELECT * FROM ${TABLE_NAME} WHERE ${PK_COLUMN}=${ID1}" 2>&1)
+
+  ROW2_RAW=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --format=json \
+    --sql="SELECT * FROM ${TABLE_NAME} WHERE ${PK_COLUMN}=${ID2}" 2>&1)
+
+  # Verifica se houve erro na execução
+  if [[ "$ROW1_RAW" =~ "ERROR" ]] || [[ "$ROW2_RAW" =~ "ERROR" ]]; then
+    echo -e "${RED}❌ Erro ao buscar registros.${NC}"
+    continue
+  fi
+
+  # =========================================
+  # 🔄 CONVERTE ARRAYS DE VALORES EM OBJETOS JSON
+  # O gcloud retorna arrays de valores, precisamos combiná-los com nomes de colunas
+  # =========================================
+  # Extrai o primeiro array de valores
+  ARRAY1=$(echo "$ROW1_RAW" | jq '
+    if type == "array" then 
+      if length > 0 then .[0] else empty end
+    elif type == "object" and has("rows") then 
+      if (.rows | length) > 0 then .rows[0] else empty end
+    else 
+      empty 
+    end
+  ' 2>/dev/null)
+
+  ARRAY2=$(echo "$ROW2_RAW" | jq '
+    if type == "array" then 
+      if length > 0 then .[0] else empty end
+    elif type == "object" and has("rows") then 
+      if (.rows | length) > 0 then .rows[0] else empty end
+    else 
+      empty 
+    end
+  ' 2>/dev/null)
+
+  # Verifica se conseguiu extrair os arrays
+  if [[ -z "$ARRAY1" || -z "$ARRAY2" || "$ARRAY1" == "null" || "$ARRAY2" == "null" || "$ARRAY1" == "" || "$ARRAY2" == "" ]]; then
+    # Verifica se é porque os registros não existem
+    ROW1_CHECK=$(echo "$ROW1_RAW" | jq 'if type == "array" then length elif type == "object" and has("rows") then (.rows | length) else 0 end' 2>/dev/null || echo "0")
+    ROW2_CHECK=$(echo "$ROW2_RAW" | jq 'if type == "array" then length elif type == "object" and has("rows") then (.rows | length) else 0 end' 2>/dev/null || echo "0")
+    
+    if [[ "$ROW1_CHECK" == "0" || "$ROW2_CHECK" == "0" ]]; then
+      echo -e "${RED}❌ Um ou ambos os registros não existem.${NC}"
+    else
+      echo -e "${RED}❌ Erro ao processar dados dos registros.${NC}"
+    fi
+    continue
+  fi
+
+  # Constrói objetos JSON combinando nomes de colunas com valores
+  # Cria um objeto JSON onde cada chave é o nome da coluna e o valor vem do array
+  J1_OBJ="{"
+  J2_OBJ="{"
+  
+  for i in "${!COLUMN_NAMES[@]}"; do
+    COL_NAME="${COLUMN_NAMES[$i]}"
+    
+    # Extrai valor do array na posição i
+    VAL1=$(echo "$ARRAY1" | jq -c ".[$i]" 2>/dev/null)
+    VAL2=$(echo "$ARRAY2" | jq -c ".[$i]" 2>/dev/null)
+    
+    # Adiciona vírgula se não for o primeiro campo
+    if [[ $i -gt 0 ]]; then
+      J1_OBJ+=","
+      J2_OBJ+=","
+    fi
+    
+    # Adiciona campo ao objeto JSON
+    J1_OBJ+="\"$COL_NAME\":$VAL1"
+    J2_OBJ+="\"$COL_NAME\":$VAL2"
+  done
+  
+  J1_OBJ+="}"
+  J2_OBJ+="}"
+
+  # Valida se os objetos JSON são válidos
+  J1=$(echo "$J1_OBJ" | jq '.' 2>/dev/null)
+  J2=$(echo "$J2_OBJ" | jq '.' 2>/dev/null)
+
+  if [[ -z "$J1" || -z "$J2" || "$J1" == "null" || "$J2" == "null" ]]; then
+    echo -e "${RED}❌ Erro ao construir objetos JSON para comparação.${NC}"
+    continue
+  fi
+
+  echo -e "${GREEN}📊 Diferenças encontradas:${NC}"
+  echo
+
+  DIFF_FOUND=false
+
+  # Compara cada campo
+  for FIELD in "${COLUMN_NAMES[@]}"; do
+    # Extrai valores usando jq
+    V1=$(echo "$J1" | jq -c --arg field "$FIELD" '.[$field]' 2>/dev/null)
+    V2=$(echo "$J2" | jq -c --arg field "$FIELD" '.[$field]' 2>/dev/null)
+
+    # Compara valores (considera null como valor válido)
+    if [[ "$V1" != "$V2" ]]; then
+      DIFF_FOUND=true
+      echo "• ${FIELD}:"
+      echo "    ${ID1_RAW} → ${V1}"
+      echo "    ${ID2_RAW} → ${V2}"
+      echo
+    fi
+  done
+
+  if [[ "$DIFF_FOUND" == false ]]; then
+    echo -e "${GRAY}✅ Registros são idênticos.${NC}"
+  fi
+
+  continue
+fi
+
 
 
 

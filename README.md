@@ -116,7 +116,31 @@ O script requer Bash moderno. A maioria dos sistemas Unix-like (macOS, Linux) j�
 bash --version
 ```
 
-### 5. **Permissões de Escrita**
+### 5. **jq (JSON Processor)**
+
+O Spanner Shell utiliza `jq` para processar respostas JSON do gcloud, especialmente para o comando `\diff` que compara registros. O `jq` é necessário para o funcionamento completo da ferramenta.
+
+**Instalação no macOS:**
+```bash
+brew install jq
+```
+
+**Instalação no Linux (Ubuntu/Debian):**
+```bash
+sudo apt-get install jq
+```
+
+**Instalação no Linux (CentOS/RHEL):**
+```bash
+sudo yum install jq
+```
+
+**Verificação:**
+```bash
+jq --version
+```
+
+### 6. **Permissões de Escrita**
 
 O Spanner Shell cria arquivos de configuração e histórico em `~/.spanner-shell/`. Certifique-se de ter permissões de escrita no diretório home.
 
@@ -384,6 +408,40 @@ WHERE
   user_id = 123;
 ```
 
+#### `\diff <tabela> <id1> <id2>`
+Compara dois registros de uma tabela e exibe as diferenças entre eles. Útil para identificar mudanças entre versões de um mesmo registro ou comparar registros diferentes.
+
+```sql
+spanner> \diff members 216172782113783808 468374361246531584
+```
+
+**Parâmetros:**
+- `<tabela>`: Nome da tabela (obrigatório)
+- `<id1>`: ID (chave primária) do primeiro registro a comparar
+- `<id2>`: ID (chave primária) do segundo registro a comparar
+
+**Características:**
+- Detecta automaticamente o tipo da chave primária (STRING ou INT64)
+- Compara todos os campos dos dois registros
+- Exibe apenas os campos que são diferentes
+- Mostra mensagem quando os registros são idênticos
+- Suporta todos os tipos de dados do Spanner
+
+**Saída:**
+```
+🔍 Comparando registros da tabela: members
+   ID1: 216172782113783808
+   ID2: 468374361246531584
+
+📊 Diferenças encontradas:
+
+• user_id:
+    216172782113783808 → "meli-123"
+    468374361246531584 → "Waelson"
+```
+
+**Nota:** Este comando requer `jq` instalado no sistema. Veja a seção [Pré-requisitos](#pré-requisitos) para mais informações.
+
 #### `\ddl <tabela>`
 Exibe o DDL (Data Definition Language) de uma tabela específica, incluindo a definição CREATE TABLE e índices relacionados.
 
@@ -582,26 +640,33 @@ spanner> \generate orders       # Gera exemplos de INSERT, UPDATE, etc.
 # Copie e cole os exemplos gerados, ajustando os valores conforme necessário
 ```
 
-### Exemplo 3: Monitoramento em Tempo Real
+### Exemplo 3: Comparação de Registros
+
+```sql
+spanner> \diff members 216172782113783808 468374361246531584
+# Compara dois registros e mostra apenas as diferenças
+```
+
+### Exemplo 4: Monitoramento em Tempo Real
 
 ```sql
 spanner> \tail -f logs          # Monitora novos logs em tempo real
 # Pressione Ctrl+C para parar
 ```
 
-### Exemplo 4: Importação de Dados
+### Exemplo 5: Importação de Dados
 
 ```sql
 spanner> \import /path/to/data.sql
 ```
 
-### Exemplo 5: Execução Repetida
+### Exemplo 6: Execução Repetida
 
 ```sql
 spanner> \repeat 100 SELECT COUNT(*) FROM users;
 ```
 
-### Exemplo 6: Trabalhando com Múltiplos Perfis
+### Exemplo 7: Trabalhando com Múltiplos Perfis
 
 ```bash
 # Criar perfis para diferentes ambientes
@@ -646,6 +711,27 @@ docker ps  # Verifique se o container está ativo
 # Se não estiver, inicie o emulador
 docker run -d -p 9020:9020 -p 9010:9010 gcr.io/cloud-spanner-emulator/emulator
 ```
+
+### Erro: "jq: command not found" ou erros ao usar `\diff`
+
+**Solução:** Instale o `jq`:
+```bash
+# macOS
+brew install jq
+
+# Linux (Ubuntu/Debian)
+sudo apt-get install jq
+
+# Linux (CentOS/RHEL)
+sudo yum install jq
+```
+
+Verifique a instalação:
+```bash
+jq --version
+```
+
+**Nota:** O comando `\diff` requer `jq` para processar respostas JSON do gcloud.
 
 ### Histórico não está funcionando
 
