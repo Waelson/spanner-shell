@@ -1,5 +1,5 @@
 #!/bin/bash
-SCRIPT_VERSION="1.0.9"
+SCRIPT_VERSION="1.0.10"
 
 # =========================================
 # CURSOR: BARRA PISCANTE
@@ -761,7 +761,10 @@ export_to_csv() {
   # Cria diretório se não existir
   local output_dir=$(dirname "$output_file")
   if [[ -n "$output_dir" && "$output_dir" != "." ]]; then
-    mkdir -p "$output_dir" 2>/dev/null
+    if ! mkdir -p "$output_dir" 2>/dev/null; then
+      echo "Erro ao criar diretório: $output_dir" >&2
+      return 1
+    fi
   fi
   
   # Processa dados tabulares
@@ -777,7 +780,10 @@ export_to_csv() {
       # Primeira linha = cabeçalho - converte tabs para vírgulas
       first_line=false
       local csv_header=$(echo "$line" | tr '\t' ',')
-      echo "$csv_header" > "$output_file"
+      if ! echo "$csv_header" > "$output_file" 2>/dev/null; then
+        echo "Erro ao escrever cabeçalho no arquivo: $output_file" >&2
+        return 2
+      fi
       line_count=1
     else
       # Linhas de dados - processa cada campo
@@ -801,12 +807,17 @@ export_to_csv() {
         fi
       done
       
-      echo "$csv_line" >> "$output_file"
+      if ! echo "$csv_line" >> "$output_file" 2>/dev/null; then
+        echo "Erro ao escrever linha no arquivo: $output_file" >&2
+        return 3
+      fi
       line_count=$((line_count + 1))
     fi
   done <<< "$output_data"
   
+  # Retorna line_count via stdout apenas se tudo foi bem-sucedido
   echo "$line_count"
+  return 0
 }
 
 # =========================================
@@ -847,6 +858,327 @@ export_to_json() {
   fi
   
   return 1
+}
+
+# =========================================
+# FUNÇÃO: Detectar tipo de coluna (numérica ou texto)
+# =========================================
+detect_column_type() {
+  local sample_value="$1"
+  
+  # Remove espaços
+  sample_value=$(echo "$sample_value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  
+  # Se vazio ou NULL, assume texto
+  if [[ -z "$sample_value" || "$sample_value" == "NULL" ]]; then
+    echo "text"
+    return
+  fi
+  
+  # Verifica se é número (inteiro ou decimal)
+  if [[ "$sample_value" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then
+    echo "numeric"
+  else
+    echo "text"
+  fi
+}
+
+# =========================================
+# FUNÇÃO: Calcular larguras das colunas
+# =========================================
+calculate_column_widths() {
+  local data="$1"
+  local max_width="${2:-50}"  # Largura máxima padrão por coluna
+  
+  # Array para armazenar larguras
+  declare -a widths
+  
+  # Processa primeira linha (cabeçalho)
+  local first_line=true
+  local num_columns=0
+  
+  while IFS= read -r line; do
+    if [[ -z "$line" ]]; then
+      continue
+    fi
+    
+    IFS=$'\t' read -ra FIELDS <<< "$line"
+    
+    if [[ "$first_line" == true ]]; then
+      # Primeira linha = cabeçalho
+      num_columns=${#FIELDS[@]}
+      for i in "${!FIELDS[@]}"; do
+        widths[$i]=${#FIELDS[$i]}
+      done
+      first_line=false
+    else
+      # Linhas de dados - atualiza largura se necessário
+      for i in "${!FIELDS[@]}"; do
+        if [[ $i -lt $num_columns ]]; then
+          local field_len=${#FIELDS[$i]}
+          if [[ $field_len -gt ${widths[$i]} ]]; then
+            widths[$i]=$field_len
+          fi
+        fi
+      done
+    fi
+  done <<< "$data"
+  
+  # Aplica limite máximo e imprime larguras
+  for i in $(seq 0 $((num_columns - 1))); do
+    if [[ ${widths[$i]} -gt $max_width ]]; then
+      widths[$i]=$max_width
+    fi
+    echo "${widths[$i]}"
+  done
+}
+
+# =========================================
+# FUNÇÃO: Formatar e exibir tabela
+# =========================================
+format_table() {
+  local output_data="$1"
+  local page_size="${2:-20}"
+  
+  # Verifica se há dados
+  if [[ -z "$output_data" ]]; then
+    echo -e "${GRAY}Nenhum resultado encontrado.${NC}"
+    return 1
+  fi
+  
+  # Conta número de colunas primeiro
+  local first_line=$(echo "$output_data" | head -n 1)
+  IFS=$'\t' read -ra HEADER_FIELDS <<< "$first_line"
+  local num_columns=${#HEADER_FIELDS[@]}
+  
+  # Calcula larguras das colunas considerando o número de colunas
+  local terminal_width=$(tput cols 2>/dev/null || echo 80)
+  
+  # Calcula espaço necessário para bordas e separadores
+  # Estrutura: │ espaço conteúdo espaço │ espaço conteúdo espaço │
+  # Para N colunas: │ (1) + N * (espaço(1) + conteúdo + espaço(1) + │(1)) = 1 + N * 3 + soma(larguras)
+  # Overhead fixo por coluna: 3 caracteres (espaço antes + espaço depois + │ separador)
+  # Overhead total fixo: 1 (│ inicial) + N * 3
+  # Nota: A última coluna também tem │ no final, então são N separadores │
+  local border_overhead=$((1 + num_columns * 3))
+  
+  # Espaço disponível para conteúdo das colunas
+  local available_width=$((terminal_width - border_overhead))
+  
+  # Calcula larguras sem limite primeiro para ver tamanho real necessário
+  local widths_str=$(calculate_column_widths "$output_data" "9999")
+  # Usa método compatível ao invés de readarray
+  widths=()
+  local total_min_width=0
+  while IFS= read -r width_val; do
+    if [[ -n "$width_val" ]]; then
+      widths+=("$width_val")
+      total_min_width=$((total_min_width + width_val))
+    fi
+  done <<< "$widths_str"
+  
+  # Calcula espaço total necessário (larguras + overhead)
+  local total_needed_width=$((total_min_width + border_overhead))
+  
+  # Se o espaço necessário é menor que o disponível, expande as colunas proporcionalmente
+  if [[ $total_needed_width -lt $terminal_width && $total_min_width -gt 0 ]]; then
+    # Usa 95% do terminal para distribuir entre as colunas
+    local target_total_width=$((terminal_width * 95 / 100))
+    local target_content_width=$((target_total_width - border_overhead))
+    
+    if [[ $target_content_width -gt $total_min_width ]]; then
+      # Expande proporcionalmente
+      local scale_factor=$((target_content_width * 100 / total_min_width))
+      
+      for i in "${!widths[@]}"; do
+        local scaled_width=$((widths[$i] * scale_factor / 100))
+        widths[$i]=$scaled_width
+      done
+    fi
+  fi
+  
+  # Aplica limite máximo apenas se necessário (para evitar colunas extremamente largas)
+  # Limite mais generoso baseado no número de colunas
+  local absolute_max
+  if [[ $num_columns -eq 1 ]]; then
+    absolute_max=$((terminal_width - border_overhead))
+  elif [[ $num_columns -le 3 ]]; then
+    absolute_max=80
+  elif [[ $num_columns -le 5 ]]; then
+    absolute_max=50
+  else
+    absolute_max=30
+  fi
+  
+  for i in "${!widths[@]}"; do
+    if [[ ${widths[$i]} -gt $absolute_max ]]; then
+      widths[$i]=$absolute_max
+    fi
+    # Garante mínimo de 10 caracteres
+    if [[ ${widths[$i]} -lt 10 ]]; then
+      widths[$i]=10
+    fi
+  done
+  
+  # Processa dados linha por linha
+  local all_lines=()
+  local line_num=0
+  
+  while IFS= read -r line; do
+    if [[ -n "$line" ]]; then
+      all_lines+=("$line")
+      line_num=$((line_num + 1))
+    fi
+  done <<< "$output_data"
+  
+  local total_lines=${#all_lines[@]}
+  local data_lines=$((total_lines - 1))  # Exclui cabeçalho
+  local total_pages=1
+  if [[ $data_lines -gt 0 ]]; then
+    total_pages=$(( (data_lines + page_size - 1) / page_size ))
+  fi
+  
+  # Função auxiliar para desenhar linha de borda
+  draw_border() {
+    local char="$1"  # ┌, ├, ou └
+    local mid_char="$2"  # ┬, ┼, ou ┴
+    local end_char="$3"  # ┐, ┤, ou ┘
+    
+    echo -ne "$char"
+    for i in $(seq 0 $((num_columns - 1))); do
+      # Cada coluna tem: 1 espaço antes + conteúdo + 1 espaço depois = widths[$i] + 2
+      for j in $(seq 1 $((${widths[$i]} + 2))); do
+        echo -ne "─"
+      done
+      if [[ $i -lt $((num_columns - 1)) ]]; then
+        echo -ne "$mid_char"
+      fi
+    done
+    echo -e "$end_char"
+  }
+  
+  # Função auxiliar para formatar célula
+  format_cell() {
+    local value="$1"
+    local width="$2"
+    local align="$3"  # "left" ou "right"
+    
+    # Trunca se muito longo (garante que width seja pelo menos 3)
+    if [[ ${#value} -gt $width && $width -ge 3 ]]; then
+      value="${value:0:$((width - 3))}..."
+    elif [[ ${#value} -gt $width && $width -lt 3 ]]; then
+      # Se width for muito pequeno, trunca para o tamanho máximo possível
+      if [[ $width -gt 0 ]]; then
+        value="${value:0:$((width - 1))}."
+      else
+        value=""
+      fi
+    fi
+    
+    if [[ "$align" == "right" ]]; then
+      printf "%*s" "$width" "$value"
+    else
+      printf "%-*s" "$width" "$value"
+    fi
+  }
+  
+  # Loop de paginação
+  local current_page=1
+  local start_data_line=1  # Começa na linha 1 (pula cabeçalho na linha 0)
+  
+  while [[ $current_page -le $total_pages ]]; do
+    # Desenha borda superior
+    draw_border "┌" "┬" "┐"
+    
+    # Cabeçalho com cor destacada
+    echo -ne "│"  # Borda esquerda primeiro
+    echo -ne "\033[44m\033[97m"  # Aplica cor após a borda
+    for i in $(seq 0 $((num_columns - 1))); do
+      local header_val="${HEADER_FIELDS[$i]}"
+      echo -ne " "
+      format_cell "$header_val" "${widths[$i]}" "left"
+      if [[ $i -eq $((num_columns - 1)) ]]; then
+        # Última coluna: reseta cor antes do │ final
+        echo -ne " \033[0m│"
+      else
+        echo -ne " │"
+      fi
+    done
+    echo  # Nova linha
+    
+    # Separador cabeçalho
+    draw_border "├" "┼" "┤"
+    
+    # Linhas de dados
+    local end_data_line=$((start_data_line + page_size - 1))
+    if [[ $end_data_line -ge $total_lines ]]; then
+      end_data_line=$((total_lines - 1))
+    fi
+    
+    local displayed_count=0
+    for line_idx in $(seq $start_data_line $end_data_line); do
+      if [[ $line_idx -lt $total_lines ]]; then
+        local data_line="${all_lines[$line_idx]}"
+        IFS=$'\t' read -ra FIELDS <<< "$data_line"
+        
+        # Imprime borda esquerda primeiro
+        echo -ne "│"
+        
+        # Aplica cor alternada após a borda
+        local has_bg_color=false
+        if [[ $((displayed_count % 2)) -eq 1 ]]; then
+          echo -ne "\033[48;5;240m"  # Fundo cinza claro
+          has_bg_color=true
+        fi
+        
+        for i in $(seq 0 $((num_columns - 1))); do
+          local field_val="${FIELDS[$i]:-}"
+          local col_type=$(detect_column_type "$field_val")
+          local align="left"
+          if [[ "$col_type" == "numeric" ]]; then
+            align="right"
+          fi
+          
+          echo -ne " "
+          format_cell "$field_val" "${widths[$i]}" "$align"
+          if [[ $i -eq $((num_columns - 1)) ]]; then
+            # Última coluna: reseta cor antes do │ final
+            if [[ "$has_bg_color" == true ]]; then
+              echo -ne " \033[0m│"
+            else
+              echo -ne " │"
+            fi
+          else
+            echo -ne " │"
+          fi
+        done
+        echo  # Nova linha
+        displayed_count=$((displayed_count + 1))
+      fi
+    done
+    
+    # Borda inferior
+    draw_border "└" "┴" "┘"
+    
+    # Informação de paginação
+    if [[ $total_pages -gt 1 ]]; then
+      echo -e "${GRAY}[Página ${current_page}/${total_pages}] - Pressione Enter para próxima página, 'q' para sair${NC}"
+      
+      # Aguarda input
+      read -r user_input
+      
+      if [[ "$user_input" == "q" || "$user_input" == "Q" ]]; then
+        break
+      fi
+      
+      start_data_line=$((start_data_line + page_size))
+      current_page=$((current_page + 1))
+    else
+      break
+    fi
+  done
+  
+  return 0
 }
 
 # =========================================
@@ -1011,6 +1343,7 @@ while true; do
     echo "  \\import                        → Importa o conteudo de um arquivo sql com instruções DML"
     echo "  \\import-ddl                    → Importa o conteudo de um arquivo sql com instruções DDL"
     echo "  \\export <query> --format csv|json --output <arquivo> → Exporta resultados de query para CSV ou JSON"
+    echo "  \\table <query> [--page-size <n>] → Exibe resultados em tabela formatada com paginação"
     echo "  \\repeat <n> <cmd>              → Executa comando N vezes"
     echo "  \\history [n]                   → Exibe últimos N comandos (padrão: 20)"
     echo "  \\history clear                 → Limpa o histórico"
@@ -1980,14 +2313,110 @@ if [[ "$SQL" =~ ^\\export[[:space:]]+ ]]; then
     fi
     
     # Exporta para CSV
-    line_count=$(export_to_csv "$csv_output" "$output_file")
+    # Usa arquivo temporário para capturar stderr separadamente
+    temp_stderr=$(mktemp)
+    line_count=$(export_to_csv "$csv_output" "$output_file" 2>"$temp_stderr")
+    export_status=$?
+    error_msg=$(cat "$temp_stderr" 2>/dev/null)
+    rm -f "$temp_stderr"
     
-    if [[ $? -eq 0 && -n "$line_count" ]]; then
+    if [[ $export_status -eq 0 && -n "$line_count" && "$line_count" =~ ^[0-9]+$ ]]; then
       echo -e "${GREEN}✅ Exportado com sucesso: ${output_file} (${line_count} linha(s))${NC}"
     else
-      echo -e "${RED}❌ Erro ao salvar arquivo CSV.${NC}"
+      if [[ -n "$error_msg" ]]; then
+        echo -e "${RED}❌ $error_msg${NC}"
+      else
+        echo -e "${RED}❌ Erro ao salvar arquivo CSV.${NC}"
+      fi
     fi
   fi
+  
+  echo -e "${NC}"
+  save_to_history "$SQL"
+  continue
+fi
+# =========================================
+# ✅ COMANDO: \table <query> [--page-size <n>]
+# =========================================
+if [[ "$SQL" =~ ^\\table[[:space:]]+ ]]; then
+  # Remove o comando "\table" do início
+  table_cmd=$(echo "$SQL" | sed 's/^\\table[[:space:]]*//')
+  
+  # Extrai query SQL e opções
+  query=""
+  page_size=20  # Padrão
+  
+  # Tenta extrair query entre aspas duplas
+  if [[ "$table_cmd" =~ ^\"([^\"]+)\" ]]; then
+    query="${BASH_REMATCH[1]}"
+    table_cmd=$(echo "$table_cmd" | sed 's/^"[^"]*"[[:space:]]*//')
+  # Tenta extrair query entre aspas simples
+  elif [[ "$table_cmd" =~ ^\'([^\']+)\' ]]; then
+    query="${BASH_REMATCH[1]}"
+    table_cmd=$(echo "$table_cmd" | sed "s/^'[^']*'[[:space:]]*//")
+  else
+    # Query sem aspas - extrai até encontrar --page-size
+    if [[ "$table_cmd" =~ ^([^[:space:]]+[[:space:]]+.*?)[[:space:]]+--page-size ]]; then
+      query=$(echo "$table_cmd" | sed 's/[[:space:]]*--page-size.*$//')
+      table_cmd=$(echo "$table_cmd" | sed 's/^.*[[:space:]]*--page-size[[:space:]]*//')
+    else
+      # Query simples sem opções
+      query="$table_cmd"
+      table_cmd=""
+    fi
+  fi
+  
+  # Extrai --page-size
+  if [[ "$table_cmd" =~ ^--page-size[[:space:]]+([0-9]+) ]]; then
+    page_size="${BASH_REMATCH[1]}"
+  elif [[ "$table_cmd" =~ ^([0-9]+) ]]; then
+    page_size="${BASH_REMATCH[1]}"
+  fi
+  
+  # Validações
+  if [[ -z "$query" ]]; then
+    echo -e "${RED}❌ Query SQL não informada.${NC}"
+    echo -e "${WHITE}Uso: \\table \"<query>\" [--page-size <n>]${NC}"
+    save_to_history "$SQL"
+    continue
+  fi
+  
+  if [[ ! "$page_size" =~ ^[0-9]+$ ]] || [[ "$page_size" -lt 1 ]] || [[ "$page_size" -gt 100 ]]; then
+    echo -e "${RED}❌ Tamanho da página inválido. Deve ser entre 1 e 100.${NC}"
+    save_to_history "$SQL"
+    continue
+  fi
+  
+  # Executa query
+  echo -e "${WHITE}Executando query...${NC}"
+  
+  table_output=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --sql="$query" 2>&1)
+  
+  STATUS=$?
+  
+  if [[ $STATUS -ne 0 ]]; then
+    ERROR_MSG=$(echo "$table_output" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
+    if [[ -n "$ERROR_MSG" ]]; then
+      echo -e "${RED}❌ Erro: ${ERROR_MSG}${NC}"
+    else
+      echo -e "${RED}❌ Erro ao executar query.${NC}"
+    fi
+    save_to_history "$SQL"
+    continue
+  fi
+  
+  # Verifica se há resultados
+  if [[ -z "$table_output" ]]; then
+    echo -e "${GRAY}Nenhum resultado encontrado.${NC}"
+    save_to_history "$SQL"
+    continue
+  fi
+  
+  # Formata e exibe tabela
+  format_table "$table_output" "$page_size"
   
   echo -e "${NC}"
   save_to_history "$SQL"
