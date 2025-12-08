@@ -565,6 +565,49 @@ CREATE TABLE products (
 CREATE INDEX idx_products_name ON products(name);
 ```
 
+#### `\export <query> --format csv|json --output <arquivo>`
+Exporta resultados de uma query SQL para arquivo CSV ou JSON. Facilita análise de dados e integração com outras ferramentas.
+
+```sql
+spanner> \export "SELECT * FROM users" --format csv --output users.csv
+spanner> \export "SELECT name, email FROM users WHERE active = true" --format json --output active_users.json
+```
+
+**Sintaxe:**
+- `<query>`: Query SQL a ser executada (pode estar entre aspas simples ou duplas)
+- `--format csv|json`: Formato de saída (obrigatório)
+- `--output <arquivo>`: Caminho do arquivo de saída (obrigatório)
+
+**Características:**
+- Executa a query e exporta os resultados para o formato especificado
+- Cria automaticamente o diretório de saída se não existir
+- Avisa se o arquivo já existe (será sobrescrito)
+- Mostra número de registros exportados
+- CSV: Primeira linha contém cabeçalho com nomes das colunas
+- JSON: Formato array de objetos (usa jq para formatação se disponível)
+
+**Exemplos:**
+
+Exportar para CSV:
+```sql
+spanner> \export "SELECT user_id, name, email FROM users LIMIT 100" --format csv --output /tmp/users.csv
+Executando query...
+✅ Exportado com sucesso: /tmp/users.csv (101 linha(s))
+```
+
+Exportar para JSON:
+```sql
+spanner> \export "SELECT * FROM orders WHERE status = 'pending'" --format json --output orders.json
+Executando query...
+✅ Exportado com sucesso: orders.json (15 registro(s))
+```
+
+**Notas:**
+- A query deve ser uma SELECT (não suporta INSERT, UPDATE, DELETE)
+- Para queries complexas, use aspas para evitar problemas de parsing
+- O formato CSV escapa automaticamente valores que contêm vírgulas ou aspas
+- O formato JSON requer jq para formatação bonita (opcional, mas recomendado)
+
 #### `\repeat <n> <comando>`
 Executa um comando SQL N vezes. Útil para testes de carga, inserções em lote ou operações repetitivas.
 
@@ -716,13 +759,23 @@ spanner> \tail -f logs          # Monitora novos logs em tempo real
 spanner> \import /path/to/data.sql
 ```
 
-### Exemplo 6: Execução Repetida
+### Exemplo 6: Exportação de Dados
+
+```sql
+# Exportar resultados para CSV
+spanner> \export "SELECT * FROM users WHERE created_at > '2024-01-01'" --format csv --output users_2024.csv
+
+# Exportar resultados para JSON
+spanner> \export "SELECT order_id, total, status FROM orders WHERE status = 'completed'" --format json --output completed_orders.json
+```
+
+### Exemplo 7: Execução Repetida
 
 ```sql
 spanner> \repeat 100 SELECT COUNT(*) FROM users;
 ```
 
-### Exemplo 7: Trabalhando com Múltiplos Perfis
+### Exemplo 8: Trabalhando com Múltiplos Perfis
 
 ```bash
 # Criar perfis para diferentes ambientes

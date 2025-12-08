@@ -1,5 +1,5 @@
 #!/bin/bash
-SCRIPT_VERSION="1.0.8"
+SCRIPT_VERSION="1.0.9"
 
 # =========================================
 # CURSOR: BARRA PISCANTE
@@ -752,6 +752,104 @@ save_to_history() {
 }
 
 # =========================================
+# FUNÇÃO: Exportar resultados para CSV
+# =========================================
+export_to_csv() {
+  local output_data="$1"
+  local output_file="$2"
+  
+  # Cria diretório se não existir
+  local output_dir=$(dirname "$output_file")
+  if [[ -n "$output_dir" && "$output_dir" != "." ]]; then
+    mkdir -p "$output_dir" 2>/dev/null
+  fi
+  
+  # Processa dados tabulares
+  local first_line=true
+  local line_count=0
+  
+  while IFS= read -r line; do
+    if [[ -z "$line" ]]; then
+      continue
+    fi
+    
+    if [[ "$first_line" == true ]]; then
+      # Primeira linha = cabeçalho - converte tabs para vírgulas
+      first_line=false
+      local csv_header=$(echo "$line" | tr '\t' ',')
+      echo "$csv_header" > "$output_file"
+      line_count=1
+    else
+      # Linhas de dados - processa cada campo
+      local csv_line=""
+      IFS=$'\t' read -ra FIELDS <<< "$line"
+      local first_field=true
+      
+      for field in "${FIELDS[@]}"; do
+        if [[ "$first_field" == false ]]; then
+          csv_line+=","
+        fi
+        first_field=false
+        
+        # Se campo contém vírgula, aspas ou quebra de linha, envolve em aspas
+        if [[ "$field" =~ [,,\"$'\n'$'\r'] ]]; then
+          # Escapa aspas duplas (duplica-as)
+          field=$(echo "$field" | sed 's/"/""/g')
+          csv_line+="\"$field\""
+        else
+          csv_line+="$field"
+        fi
+      done
+      
+      echo "$csv_line" >> "$output_file"
+      line_count=$((line_count + 1))
+    fi
+  done <<< "$output_data"
+  
+  echo "$line_count"
+}
+
+# =========================================
+# FUNÇÃO: Exportar resultados para JSON
+# =========================================
+export_to_json() {
+  local json_data="$1"
+  local output_file="$2"
+  
+  # Cria diretório se não existir
+  local output_dir=$(dirname "$output_file")
+  if [[ -n "$output_dir" && "$output_dir" != "." ]]; then
+    mkdir -p "$output_dir" 2>/dev/null
+  fi
+  
+  # Verifica se jq está disponível
+  if command -v jq >/dev/null 2>&1; then
+    # Usa jq para formatar JSON de forma bonita
+    echo "$json_data" | jq '.' > "$output_file" 2>/dev/null
+    if [[ $? -eq 0 ]]; then
+      # Conta linhas (número de objetos no array)
+      local line_count=$(echo "$json_data" | jq 'if type == "array" then length elif type == "object" and has("rows") then (.rows | length) else 0 end' 2>/dev/null || echo "0")
+      echo "$line_count"
+      return 0
+    fi
+  fi
+  
+  # Fallback: salva JSON sem formatação (já deve estar válido do gcloud)
+  echo "$json_data" > "$output_file"
+  if [[ $? -eq 0 ]]; then
+    # Tenta contar objetos manualmente (aproximado)
+    local line_count=$(echo "$json_data" | grep -o '^{' | wc -l | tr -d ' ')
+    if [[ -z "$line_count" || "$line_count" == "0" ]]; then
+      line_count=1
+    fi
+    echo "$line_count"
+    return 0
+  fi
+  
+  return 1
+}
+
+# =========================================
 # CONFIGURAÇÃO DO READLINE PARA HISTÓRICO ISOLADO
 # =========================================
 # Salva o histórico do bash atual
@@ -912,6 +1010,7 @@ while true; do
     echo "  \\config                        → Exibe as configurações"
     echo "  \\import                        → Importa o conteudo de um arquivo sql com instruções DML"
     echo "  \\import-ddl                    → Importa o conteudo de um arquivo sql com instruções DDL"
+    echo "  \\export <query> --format csv|json --output <arquivo> → Exporta resultados de query para CSV ou JSON"
     echo "  \\repeat <n> <cmd>              → Executa comando N vezes"
     echo "  \\history [n]                   → Exibe últimos N comandos (padrão: 20)"
     echo "  \\history clear                 → Limpa o histórico"
@@ -1740,6 +1839,158 @@ if [[ "$SQL" =~ ^\\diff($|[[:space:]]+) ]]; then
     echo -e "${GRAY}✅ Registros são idênticos.${NC}"
   fi
 
+  continue
+fi
+# =========================================
+# ✅ COMANDO: \export <query> --format csv|json --output <arquivo>
+# =========================================
+if [[ "$SQL" =~ ^\\export[[:space:]]+ ]]; then
+  # Remove o comando "\export" do início
+  export_cmd=$(echo "$SQL" | sed 's/^\\export[[:space:]]*//')
+  
+  # Extrai query SQL (pode estar entre aspas ou não)
+  query=""
+  format=""
+  output_file=""
+  
+  # Tenta extrair query entre aspas duplas
+  if [[ "$export_cmd" =~ ^\"([^\"]+)\" ]]; then
+    query="${BASH_REMATCH[1]}"
+    export_cmd=$(echo "$export_cmd" | sed 's/^"[^"]*"[[:space:]]*//')
+  # Tenta extrair query entre aspas simples
+  elif [[ "$export_cmd" =~ ^\'([^\']+)\' ]]; then
+    query="${BASH_REMATCH[1]}"
+    export_cmd=$(echo "$export_cmd" | sed "s/^'[^']*'[[:space:]]*//")
+  else
+    # Query sem aspas - extrai até encontrar --format
+    if [[ "$export_cmd" =~ ^([^[:space:]]+[[:space:]]+.*?)[[:space:]]+--format ]]; then
+      query=$(echo "$export_cmd" | sed 's/[[:space:]]*--format.*$//')
+      export_cmd=$(echo "$export_cmd" | sed 's/^.*[[:space:]]*--format[[:space:]]*//')
+    else
+      # Query simples sem --format (erro)
+      query=""
+    fi
+  fi
+  
+  # Extrai --format
+  if [[ "$export_cmd" =~ ^(csv|json)[[:space:]]+ ]]; then
+    format="${BASH_REMATCH[1]}"
+    export_cmd=$(echo "$export_cmd" | sed 's/^[^[:space:]]*[[:space:]]*//')
+  elif [[ "$export_cmd" =~ ^--format[[:space:]]+(csv|json)[[:space:]]+ ]]; then
+    format="${BASH_REMATCH[1]}"
+    export_cmd=$(echo "$export_cmd" | sed 's/^--format[[:space:]]*[^[:space:]]*[[:space:]]*//')
+  fi
+  
+  # Extrai --output
+  if [[ "$export_cmd" =~ ^--output[[:space:]]+([^[:space:]]+) ]]; then
+    output_file="${BASH_REMATCH[1]}"
+  elif [[ "$export_cmd" =~ ^([^[:space:]]+) ]]; then
+    # Se não tem --output, assume que o próximo token é o arquivo
+    output_file="${BASH_REMATCH[1]}"
+  fi
+  
+  # Validações
+  if [[ -z "$query" ]]; then
+    echo -e "${RED}❌ Query SQL não informada.${NC}"
+    echo -e "${WHITE}Uso: \\export \"<query>\" --format csv|json --output <arquivo>${NC}"
+    save_to_history "$SQL"
+    continue
+  fi
+  
+  if [[ -z "$format" || ! "$format" =~ ^(csv|json)$ ]]; then
+    echo -e "${RED}❌ Formato inválido. Deve ser 'csv' ou 'json'.${NC}"
+    save_to_history "$SQL"
+    continue
+  fi
+  
+  if [[ -z "$output_file" ]]; then
+    echo -e "${RED}❌ Arquivo de saída não informado.${NC}"
+    save_to_history "$SQL"
+    continue
+  fi
+  
+  # Valida diretório de saída
+  output_dir=$(dirname "$output_file")
+  if [[ -n "$output_dir" && "$output_dir" != "." ]]; then
+    if [[ ! -d "$output_dir" ]]; then
+      if ! mkdir -p "$output_dir" 2>/dev/null; then
+        echo -e "${RED}❌ Não foi possível criar o diretório: ${output_dir}${NC}"
+        save_to_history "$SQL"
+        continue
+      fi
+    fi
+  fi
+  
+  # Verifica se arquivo já existe
+  if [[ -f "$output_file" ]]; then
+    echo -e "${GRAY}⚠️  Arquivo já existe: ${output_file}${NC}"
+    echo -e "${GRAY}   Será sobrescrito.${NC}"
+  fi
+  
+  # Executa query
+  echo -e "${WHITE}Executando query...${NC}"
+  
+  if [[ "$format" == "json" ]]; then
+    # Executa com formato JSON
+    json_output=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+      --instance=${INSTANCE_ID} \
+      --quiet \
+      --format=json \
+      --sql="$query" 2>&1)
+    
+    STATUS=$?
+    
+    if [[ $STATUS -ne 0 ]]; then
+      ERROR_MSG=$(echo "$json_output" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
+      if [[ -n "$ERROR_MSG" ]]; then
+        echo -e "${RED}❌ Erro: ${ERROR_MSG}${NC}"
+      else
+        echo -e "${RED}❌ Erro ao executar query.${NC}"
+      fi
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    # Exporta para JSON
+    line_count=$(export_to_json "$json_output" "$output_file")
+    
+    if [[ $? -eq 0 ]]; then
+      echo -e "${GREEN}✅ Exportado com sucesso: ${output_file} (${line_count} registro(s))${NC}"
+    else
+      echo -e "${RED}❌ Erro ao salvar arquivo JSON.${NC}"
+    fi
+  else
+    # Executa com formato tabular (CSV)
+    csv_output=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+      --instance=${INSTANCE_ID} \
+      --quiet \
+      --sql="$query" 2>&1)
+    
+    STATUS=$?
+    
+    if [[ $STATUS -ne 0 ]]; then
+      ERROR_MSG=$(echo "$csv_output" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
+      if [[ -n "$ERROR_MSG" ]]; then
+        echo -e "${RED}❌ Erro: ${ERROR_MSG}${NC}"
+      else
+        echo -e "${RED}❌ Erro ao executar query.${NC}"
+      fi
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    # Exporta para CSV
+    line_count=$(export_to_csv "$csv_output" "$output_file")
+    
+    if [[ $? -eq 0 && -n "$line_count" ]]; then
+      echo -e "${GREEN}✅ Exportado com sucesso: ${output_file} (${line_count} linha(s))${NC}"
+    else
+      echo -e "${RED}❌ Erro ao salvar arquivo CSV.${NC}"
+    fi
+  fi
+  
+  echo -e "${NC}"
+  save_to_history "$SQL"
   continue
 fi
 
