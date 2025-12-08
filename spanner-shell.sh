@@ -1,5 +1,5 @@
 #!/bin/bash
-SCRIPT_VERSION="1.0.4"
+SCRIPT_VERSION="1.0.5"
 
 # =========================================
 # CURSOR: BARRA PISCANTE
@@ -67,6 +67,89 @@ EOF
 fi
 
 # =========================================
+# COMANDO: --list-profile (LISTAR E SELECIONAR PERFIL)
+# =========================================
+if [[ "$1" == "--list-profile" ]]; then
+  clear
+  echo "📋 Listando perfis disponíveis..."
+  echo
+
+  # Buscar todos os perfis
+  PROFILES=()
+  PROFILE_NAMES=()
+
+  # Buscar todos os arquivos .env no diretório de perfis
+  for profile_file in "$PROFILE_DIR"/*.env; do
+    if [[ -f "$profile_file" ]]; then
+      # Extrair nome do perfil (sem extensão .env)
+      profile_name=$(basename "$profile_file" .env)
+      PROFILES+=("$profile_file")
+      PROFILE_NAMES+=("$profile_name")
+    fi
+  done
+
+  # Verificar se há perfis
+  if [[ ${#PROFILES[@]} -eq 0 ]]; then
+    echo -e "${RED}❌ Nenhum perfil encontrado.${NC}"
+    echo -e "${WHITE}➡️  Crie um perfil com: spanner-shell --config${NC}"
+    echo
+    exit 1
+  fi
+
+  # Exibir lista numerada de perfis
+  echo -e "${WHITE}📋 Perfis disponíveis:${NC}"
+  echo
+
+  # Exibir perfis com informações
+  for i in "${!PROFILE_NAMES[@]}"; do
+    idx=$((i + 1))
+    profile_name="${PROFILE_NAMES[$i]}"
+    profile_file="${PROFILES[$i]}"
+
+    # Ler informações do arquivo sem usar source (para não poluir variáveis)
+    # Extrair TYPE e PROJECT_ID diretamente do arquivo
+    profile_type=$(grep "^TYPE=" "$profile_file" 2>/dev/null | cut -d'=' -f2 | tr -d '"' || echo "unknown")
+    profile_project=$(grep "^PROJECT_ID=" "$profile_file" 2>/dev/null | cut -d'=' -f2 | tr -d '"' || echo "unknown")
+    
+    echo -e "${WHITE}   ${idx}) ${GREEN}${profile_name}${NC} (${profile_type}) - ${profile_project}"
+  done
+
+  echo
+  echo -ne "${WHITE}Qual perfil deseja usar? (digite o número): ${NC}"
+  read -r SELECTED_NUM
+
+  # Validar entrada
+  if [[ -z "$SELECTED_NUM" ]]; then
+    echo -e "${RED}❌ Nenhum número foi informado.${NC}"
+    exit 1
+  fi
+
+  # Validar se é um número
+  if ! [[ "$SELECTED_NUM" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}❌ Entrada inválida. Por favor, digite um número.${NC}"
+    exit 1
+  fi
+
+  # Validar range
+  if [[ "$SELECTED_NUM" -lt 1 || "$SELECTED_NUM" -gt ${#PROFILES[@]} ]]; then
+    echo -e "${RED}❌ Número inválido. Por favor, escolha um número entre 1 e ${#PROFILES[@]}.${NC}"
+    exit 1
+  fi
+
+  # Obter índice (subtrair 1 porque array começa em 0)
+  idx=$((SELECTED_NUM - 1))
+  SELECTED_PROFILE="${PROFILES[$idx]}"
+  SELECTED_NAME="${PROFILE_NAMES[$idx]}"
+
+  # Carregar perfil selecionado
+  source "$SELECTED_PROFILE"
+
+  echo
+  echo -e "${GREEN}✅ Perfil '${SELECTED_NAME}' carregado com sucesso!${NC}"
+  echo
+fi
+
+# =========================================
 # COMANDO: --profile <nome>
 # =========================================
 if [[ "$1" == "--profile" && -n "$2" ]]; then
@@ -86,8 +169,9 @@ fi
 if [[ -z "$PROJECT_ID" || -z "$INSTANCE_ID" || -z "$DATABASE_ID" || -z "$TYPE" ]]; then
   echo "❌ Nenhum perfil carregado."
   echo "Use:"
-  echo "  spanner-shell --config"
-  echo "  spanner-shell --profile dev"
+  echo "  spanner-shell --config        # Criar um novo perfil"
+  echo "  spanner-shell --list-profile   # Listar e selecionar um perfil"
+  echo "  spanner-shell --profile dev    # Usar um perfil específico"
   exit 1
 fi
 
