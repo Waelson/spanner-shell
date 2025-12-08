@@ -1,5 +1,5 @@
 #!/bin/bash
-SCRIPT_VERSION="1.0.7"
+SCRIPT_VERSION="1.0.8"
 
 # =========================================
 # CURSOR: BARRA PISCANTE
@@ -41,20 +41,84 @@ if [[ "$1" == "--config" ]]; then
   echo "🔧 Criação de perfil do Spanner Shell"
   echo
 
-  read -p "Nome do perfil (ex: dev, stage, prod): " PROFILE_NAME
-  read -p "Tipo (emulator | remote): " TYPE
-  read -p "Project ID: " PROJECT_ID
-  read -p "Instance ID: " INSTANCE_ID
-  read -p "Database ID: " DATABASE_ID
+  # Validar nome do perfil - não deve conter espaços nem caracteres especiais
+  while true; do
+    read -p "Nome do perfil (ex: dev, stage, prod): " PROFILE_NAME
+    if [[ "$PROFILE_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+      break
+    else
+      echo -e "${RED}❌ Nome do perfil inválido. Use apenas letras, números, hífens e underscores (sem espaços).${NC}"
+    fi
+  done
+  
+  # Validar TYPE - deve ser emulator ou remote
+  while true; do
+    read -p "Tipo (emulator | remote): " TYPE
+    if [[ "$TYPE" == "emulator" || "$TYPE" == "remote" ]]; then
+      break
+    else
+      echo -e "${RED}❌ Tipo inválido. Deve ser 'emulator' ou 'remote'.${NC}"
+    fi
+  done
+  
+  # Validar Project ID - não deve conter espaços
+  while true; do
+    read -p "Project ID: " PROJECT_ID
+    if [[ -n "$PROJECT_ID" && ! "$PROJECT_ID" =~ [[:space:]] ]]; then
+      break
+    else
+      echo -e "${RED}❌ Project ID inválido. Não pode conter espaços.${NC}"
+    fi
+  done
+  
+  # Validar Instance ID - não deve conter espaços
+  while true; do
+    read -p "Instance ID: " INSTANCE_ID
+    if [[ -n "$INSTANCE_ID" && ! "$INSTANCE_ID" =~ [[:space:]] ]]; then
+      break
+    else
+      echo -e "${RED}❌ Instance ID inválido. Não pode conter espaços.${NC}"
+    fi
+  done
+  
+  # Validar Database ID - não deve conter espaços
+  while true; do
+    read -p "Database ID: " DATABASE_ID
+    if [[ -n "$DATABASE_ID" && ! "$DATABASE_ID" =~ [[:space:]] ]]; then
+      break
+    else
+      echo -e "${RED}❌ Database ID inválido. Não pode conter espaços.${NC}"
+    fi
+  done
+
+  # Se for emulator, perguntar pelo endpoint opcional
+  ENDPOINT=""
+  if [[ "$TYPE" == "emulator" ]]; then
+    read -p "Endpoint (opcional, padrão: http://localhost:9020/): " ENDPOINT_INPUT
+    if [[ -n "$ENDPOINT_INPUT" ]]; then
+      # Garante que o endpoint sempre termine com "/"
+      if [[ "$ENDPOINT_INPUT" != */ ]]; then
+        ENDPOINT="${ENDPOINT_INPUT}/"
+      else
+        ENDPOINT="$ENDPOINT_INPUT"
+      fi
+    fi
+  fi
 
   PROFILE_FILE="${PROFILE_DIR}/${PROFILE_NAME}.env"
 
+  # Monta o conteúdo do arquivo .env
   cat <<EOF > "$PROFILE_FILE"
 TYPE=${TYPE}
 PROJECT_ID=${PROJECT_ID}
 INSTANCE_ID=${INSTANCE_ID}
 DATABASE_ID=${DATABASE_ID}
 EOF
+
+  # Adiciona ENDPOINT apenas se foi informado
+  if [[ -n "$ENDPOINT" ]]; then
+    echo "ENDPOINT=${ENDPOINT}" >> "$PROFILE_FILE"
+  fi
 
   echo
   echo "✅ Perfil criado com sucesso:"
@@ -197,7 +261,13 @@ echo -e "${WHITE}"
 if [[ "$TYPE" == "emulator" ]]; then
   echo "✅ Usando Spanner Emulator"
   gcloud config set auth/disable_credentials true --quiet
-  gcloud config set api_endpoint_overrides/spanner http://localhost:9020/ --quiet
+  
+  # Usa endpoint do perfil se disponível, senão usa o padrão
+  if [[ -n "$ENDPOINT" ]]; then
+    gcloud config set api_endpoint_overrides/spanner ${ENDPOINT} --quiet
+  else
+    gcloud config set api_endpoint_overrides/spanner http://localhost:9020/ --quiet
+  fi
 else
   echo "✅ Usando Spanner Remoto"
   gcloud config set auth/disable_credentials false
@@ -244,12 +314,12 @@ show_banner() {
        |_|                                                       
 EOF
   echo 
-  echo "----------------"
-  echo " Versão: v${SCRIPT_VERSION}"
+  echo -e "${GRAY}----------------${NC}"
+  echo -e "${GRAY} \033[1mVersão\033[0;90m: v${SCRIPT_VERSION}${NC}"
   if [[ -n "$SELECTED_NAME" ]]; then
-    echo " Perfil: ${SELECTED_NAME}"
+    echo -e "${GRAY} \033[1mPerfil\033[0;90m: ${SELECTED_NAME}${NC}"
   fi
-  echo "----------------"
+  echo -e "${GRAY}----------------${NC}"
   echo -e "${NC}"
 }
 
@@ -883,11 +953,14 @@ while true; do
   if [[ "$SQL" == "\config" ]]; then
     echo -e "${WHITE}"
     echo "Configurações:"
-    echo "  Profile:  ${2}"
+    echo "  Profile:  ${SELECTED_NAME}"
     echo "  Type:     ${TYPE}"
     echo "  Project:  ${PROJECT_ID}"
     echo "  Instance: ${INSTANCE_ID}"
     echo "  Database: ${DATABASE_ID}"
+    if [[ -n "$ENDPOINT" ]]; then
+      echo "  Endpoint: ${ENDPOINT}"
+    fi
     echo -e "${NC}"
     save_to_history "$SQL"
     continue
