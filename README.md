@@ -608,6 +608,58 @@ Executando query...
 - O formato CSV escapa automaticamente valores que contêm vírgulas ou aspas
 - O formato JSON requer jq para formatação bonita (opcional, mas recomendado)
 
+#### `\table <query> [--page-size <n>]`
+Exibe resultados de uma query SQL em uma tabela formatada com bordas, cores alternadas, alinhamento de colunas e paginação automática. Melhora significativamente a legibilidade de resultados grandes.
+
+```sql
+spanner> \table "SELECT user_id, name, email FROM users LIMIT 50"
+spanner> \table "SELECT * FROM orders WHERE status = 'pending'" --page-size 15
+```
+
+**Sintaxe:**
+- `<query>`: Query SQL a ser executada (pode estar entre aspas simples ou duplas)
+- `--page-size <n>`: Número de linhas por página (opcional, padrão: 20, mínimo: 1, máximo: 100)
+
+**Características:**
+- Formatação visual com bordas usando caracteres box-drawing (┌ ┐ └ ┘ │ ─ ├ ┤ ┬ ┴ ┼)
+- Cabeçalho destacado com fundo colorido
+- Cores alternadas nas linhas para facilitar leitura
+- Alinhamento inteligente: colunas numéricas à direita, texto à esquerda
+- Paginação automática para resultados grandes
+- Adapta largura das colunas ao tamanho do terminal
+- Trunca valores muito longos automaticamente
+
+**Exemplo de saída:**
+```
+┌──────────┬──────────────────────┬──────────────────────────┬─────────┐
+│ user_id  │ name                 │ email                    │ status  │
+├──────────┼──────────────────────┼──────────────────────────┼─────────┤
+│ 1        │ João Silva           │ joao@example.com         │ active  │
+│ 2        │ Maria Santos         │ maria@example.com       │ active  │
+│ 3        │ Pedro Oliveira       │ pedro@example.com       │ inactive│
+└──────────┴──────────────────────┴──────────────────────────┴─────────┘
+[Página 1/3] - Pressione Enter para próxima página, 'q' para sair
+```
+
+**Exemplos:**
+
+Tabela simples:
+```sql
+spanner> \table "SELECT user_id, name, email FROM users LIMIT 10"
+```
+
+Tabela com paginação customizada:
+```sql
+spanner> \table "SELECT * FROM orders ORDER BY created_at DESC" --page-size 15
+```
+
+**Notas:**
+- A query deve ser uma SELECT (não suporta INSERT, UPDATE, DELETE)
+- Para muitos registros, considere usar LIMIT na query para melhor performance
+- Pressione 'q' durante a paginação para sair
+- O comando adapta-se automaticamente à largura do terminal
+- Valores muito longos são truncados com "..."
+
 #### `\repeat <n> <comando>`
 Executa um comando SQL N vezes. Útil para testes de carga, inserções em lote ou operações repetitivas.
 
@@ -769,13 +821,23 @@ spanner> \export "SELECT * FROM users WHERE created_at > '2024-01-01'" --format 
 spanner> \export "SELECT order_id, total, status FROM orders WHERE status = 'completed'" --format json --output completed_orders.json
 ```
 
-### Exemplo 7: Execução Repetida
+### Exemplo 7: Visualização Formatada em Tabela
+
+```sql
+# Exibir resultados em tabela formatada
+spanner> \table "SELECT user_id, name, email, status FROM users LIMIT 20"
+
+# Tabela com paginação customizada
+spanner> \table "SELECT * FROM orders ORDER BY created_at DESC" --page-size 15
+```
+
+### Exemplo 8: Execução Repetida
 
 ```sql
 spanner> \repeat 100 SELECT COUNT(*) FROM users;
 ```
 
-### Exemplo 8: Trabalhando com Múltiplos Perfis
+### Exemplo 9: Trabalhando com Múltiplos Perfis
 
 ```bash
 # Criar perfis para diferentes ambientes
