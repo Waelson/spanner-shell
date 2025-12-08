@@ -1,5 +1,5 @@
 #!/bin/bash
-SCRIPT_VERSION="1.0.6"
+SCRIPT_VERSION="1.0.7"
 
 # =========================================
 # CURSOR: BARRA PISCANTE
