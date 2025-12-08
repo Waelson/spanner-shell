@@ -1,5 +1,5 @@
 #!/bin/bash
-SCRIPT_VERSION="1.0.6"
+SCRIPT_VERSION="1.0.7"
 
 # =========================================
 # CURSOR: BARRA PISCANTE
@@ -231,11 +231,11 @@ echo -e "${NC}"
 clear
 
 # =========================================
-# BANNER
+# FUNÇÃO: Exibir banner
 # =========================================
-echo -e "${GREEN}"
-
-cat << "EOF"
+show_banner() {
+  echo -e "${GREEN}"
+  cat << "EOF"
   ____                                     _____ _          _ _  
  / ___| _ __   __ _ _ __  _ __   ___ _ __ / ____| |__   ___| | | 
  \___ \| '_ \ / _` | '_ \| '_ \ / _ \ '__| (___ | '_ \ / _ \ | | 
@@ -243,14 +243,20 @@ cat << "EOF"
  |____/| .__/ \__,_|_| |_|_| |_|\___|_|   ____) | | | |\___|_|_| 
        |_|                                                       
 EOF
-echo 
-echo "----------------"
-echo " Versão: v${SCRIPT_VERSION}"
-if [[ -n "$SELECTED_NAME" ]]; then
-  echo " Perfil: ${SELECTED_NAME}"
-fi
-echo "----------------"
-echo -e "${NC}"
+  echo 
+  echo "----------------"
+  echo " Versão: v${SCRIPT_VERSION}"
+  if [[ -n "$SELECTED_NAME" ]]; then
+    echo " Perfil: ${SELECTED_NAME}"
+  fi
+  echo "----------------"
+  echo -e "${NC}"
+}
+
+# =========================================
+# BANNER
+# =========================================
+show_banner
 
 
 # =========================================
@@ -1671,6 +1677,7 @@ fi
   # clear
   if [ "$SQL" == "clear" ]; then
     clear
+    show_banner
     save_to_history "$SQL"
     continue
   fi
