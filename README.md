@@ -222,7 +222,36 @@ Database ID: my-database
 
 ### Usando um Perfil
 
-Após criar um perfil, você pode iniciar o Spanner Shell com ele:
+Após criar um perfil, você pode iniciar o Spanner Shell com ele de duas formas:
+
+#### Método 1: Seleção Interativa (Recomendado)
+
+Use o comando `--list-profile` para ver todos os perfis disponíveis e selecionar um interativamente:
+
+```bash
+spanner-shell --list-profile
+```
+
+O script irá:
+1. Listar todos os perfis disponíveis numerados
+2. Solicitar que você digite o número do perfil desejado
+3. Carregar o perfil selecionado automaticamente
+
+**Exemplo de saída:**
+```
+📋 Perfis disponíveis:
+
+   1) dev (remote) - projeto-dev
+   2) stage (remote) - projeto-stage
+   3) prod (remote) - projeto-prod
+
+Qual perfil deseja usar? (digite o número): 2
+✅ Perfil 'stage' carregado com sucesso!
+```
+
+#### Método 2: Especificar Perfil Diretamente
+
+Você também pode especificar o nome do perfil diretamente:
 
 ```bash
 spanner-shell --profile dev
@@ -250,12 +279,39 @@ Inicia o assistente interativo para criar um novo perfil de configuração.
 spanner-shell --config
 ```
 
+#### `--list-profile`
+Lista todos os perfis disponíveis e permite seleção interativa. Esta é a forma mais conveniente de escolher um perfil quando você tem múltiplos perfis configurados.
+
+```bash
+spanner-shell --list-profile
+```
+
+**Características:**
+- Exibe todos os perfis numerados com informações (tipo e project ID)
+- Solicita seleção por número
+- Valida a entrada do usuário
+- Carrega automaticamente o perfil selecionado
+
+**Exemplo:**
+```
+📋 Perfis disponíveis:
+
+   1) dev (remote) - projeto-dev
+   2) stage (remote) - projeto-stage
+   3) prod (remote) - projeto-prod
+
+Qual perfil deseja usar? (digite o número): 2
+✅ Perfil 'stage' carregado com sucesso!
+```
+
 #### `--profile <nome>`
-Inicia o Spanner Shell usando um perfil específico.
+Inicia o Spanner Shell usando um perfil específico pelo nome.
 
 ```bash
 spanner-shell --profile dev
 ```
+
+**Nota:** Se você não souber o nome exato do perfil, use `--list-profile` para ver todos os perfis disponíveis.
 
 ---
 
@@ -696,11 +752,23 @@ brew install --cask google-cloud-sdk
 gcloud auth login
 ```
 
-### Erro: "Perfil não encontrado"
+### Erro: "Perfil não encontrado" ou "Nenhum perfil carregado"
 
-**Solução:** Crie um perfil primeiro:
+**Solução:** Você tem algumas opções:
+
+1. **Listar perfis disponíveis:**
+```bash
+spanner-shell --list-profile
+```
+
+2. **Criar um novo perfil:**
 ```bash
 spanner-shell --config
+```
+
+3. **Usar um perfil específico:**
+```bash
+spanner-shell --profile <nome-do-perfil>
 ```
 
 ### Erro ao conectar com o Emulador
