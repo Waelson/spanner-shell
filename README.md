@@ -326,14 +326,14 @@ Exibe a lista de todos os comandos disponíveis com suas descrições.
 spanner> \help
 ```
 
-#### `\config`
+#### `\c`
 Exibe as configurações atuais do perfil carregado (tipo, projeto, instância, banco de dados).
 
 ```sql
-spanner> \config
+spanner> \c
 ```
 
-#### `\dt`
+#### `\t`
 Lista todas as tabelas do banco de dados atual.
 
 ```sql
@@ -366,11 +366,11 @@ email        STRING(255)     YES
 created_at   TIMESTAMP       NO
 ```
 
-#### `\count <tabela>`
+#### `\n <tabela>`
 Conta o número total de registros em uma tabela.
 
 ```sql
-spanner> \count users
+spanner> \n users
 ```
 
 **Saída:**
@@ -381,12 +381,12 @@ total
 1250
 ```
 
-#### `\sample <tabela> [n]`
+#### `\s <tabela> [n]`
 Mostra uma amostra de registros de uma tabela. Por padrão, exibe 10 registros. Você pode especificar um número diferente (máximo 1000).
 
 ```sql
-spanner> \sample users
-spanner> \sample users 20
+spanner> \s users
+spanner> \s users 20
 ```
 
 **Saída:**
@@ -400,13 +400,13 @@ user_id  name           email
 ...
 ```
 
-#### `\tail <tabela> [n] [coluna]`
+#### `\l <tabela> [n] [coluna]`
 Mostra os últimos N registros de uma tabela, ordenados por uma coluna específica (ou pela chave primária, se não especificada). Por padrão, mostra 10 registros.
 
 ```sql
-spanner> \tail users
-spanner> \tail users 20
-spanner> \tail users 15 created_at
+spanner> \l users
+spanner> \l users 20
+spanner> \l users 15 created_at
 ```
 
 **Parâmetros:**
@@ -414,12 +414,12 @@ spanner> \tail users 15 created_at
 - `[n]`: Número de registros a exibir (padrão: 10, máximo: 1000)
 - `[coluna]`: Coluna para ordenação (padrão: chave primária ou primeira coluna)
 
-#### `\tail -f <tabela> [n] [coluna]`
+#### `\f <tabela> [n] [coluna]`
 Monitora novos registros em uma tabela em tempo real, atualizando a cada 5 segundos. Similar ao `tail -f` do Unix.
 
 ```sql
-spanner> \tail -f users
-spanner> \tail -f orders 20 order_id
+spanner> \f users
+spanner> \f orders 20 order_id
 ```
 
 **Características:**
@@ -428,11 +428,11 @@ spanner> \tail -f orders 20 order_id
 - Pressione `Ctrl+C` para parar o monitoramento
 - Ordena por chave primária ou coluna especificada
 
-#### `\generate <tabela>`
+#### `\g <tabela>`
 Gera automaticamente exemplos de comandos DML (INSERT, UPDATE, SELECT, DELETE) baseados na estrutura da tabela.
 
 ```sql
-spanner> \generate users
+spanner> \g users
 ```
 
 **Saída:**
@@ -464,11 +464,11 @@ WHERE
   user_id = 123;
 ```
 
-#### `\diff <tabela> <id1> <id2>`
+#### `\df <tabela> <id1> <id2>`
 Compara dois registros de uma tabela e exibe as diferenças entre eles. Útil para identificar mudanças entre versões de um mesmo registro ou comparar registros diferentes.
 
 ```sql
-spanner> \diff members 216172782113783808 468374361246531584
+spanner> \df members 216172782113783808 468374361246531584
 ```
 
 **Parâmetros:**
@@ -498,11 +498,11 @@ spanner> \diff members 216172782113783808 468374361246531584
 
 **Nota:** Este comando requer `jq` instalado no sistema. Veja a seção [Pré-requisitos](#pré-requisitos) para mais informações.
 
-#### `\ddl <tabela>`
+#### `\dd <tabela>`
 Exibe o DDL (Data Definition Language) de uma tabela específica, incluindo a definição CREATE TABLE e índices relacionados.
 
 ```sql
-spanner> \ddl users
+spanner> \dd users
 ```
 
 **Saída:**
@@ -515,18 +515,18 @@ CREATE TABLE users (
 ) PRIMARY KEY (user_id);
 ```
 
-#### `\ddl all`
+#### `\da`
 Exibe o DDL completo de todo o banco de dados, incluindo todas as tabelas e índices.
 
 ```sql
-spanner> \ddl all
+spanner> \da
 ```
 
-#### `\import <arquivo.sql>`
+#### `\im <arquivo.sql>`
 Importa e executa um arquivo SQL contendo instruções DML (INSERT, UPDATE, DELETE, SELECT).
 
 ```sql
-spanner> \import /caminho/para/arquivo.sql
+spanner> \im /caminho/para/arquivo.sql
 ```
 
 **Características:**
@@ -541,11 +541,11 @@ INSERT INTO users (user_id, name, email) VALUES (1, 'João', 'joao@example.com')
 INSERT INTO users (user_id, name, email) VALUES (2, 'Maria', 'maria@example.com');
 ```
 
-#### `\import-ddl <arquivo.sql>`
+#### `\id <arquivo.sql>`
 Importa e executa um arquivo SQL contendo instruções DDL (CREATE TABLE, CREATE INDEX, ALTER TABLE, etc.).
 
 ```sql
-spanner> \import-ddl /caminho/para/schema.sql
+spanner> \id /caminho/para/schema.sql
 ```
 
 **Características:**
@@ -565,12 +565,12 @@ CREATE TABLE products (
 CREATE INDEX idx_products_name ON products(name);
 ```
 
-#### `\export <query> --format csv|json --output <arquivo>`
+#### `\e <query> --format csv|json --output <arquivo>`
 Exporta resultados de uma query SQL para arquivo CSV ou JSON. Facilita análise de dados e integração com outras ferramentas.
 
 ```sql
-spanner> \export "SELECT * FROM users" --format csv --output users.csv
-spanner> \export "SELECT name, email FROM users WHERE active = true" --format json --output active_users.json
+spanner> \e "SELECT * FROM users" --format csv --output users.csv
+spanner> \e "SELECT name, email FROM users WHERE active = true" --format json --output active_users.json
 ```
 
 **Sintaxe:**
@@ -590,14 +590,14 @@ spanner> \export "SELECT name, email FROM users WHERE active = true" --format js
 
 Exportar para CSV:
 ```sql
-spanner> \export "SELECT user_id, name, email FROM users LIMIT 100" --format csv --output /tmp/users.csv
+spanner> \e "SELECT user_id, name, email FROM users LIMIT 100" --format csv --output /tmp/users.csv
 Executando query...
 ✅ Exportado com sucesso: /tmp/users.csv (101 linha(s))
 ```
 
 Exportar para JSON:
 ```sql
-spanner> \export "SELECT * FROM orders WHERE status = 'pending'" --format json --output orders.json
+spanner> \e "SELECT * FROM orders WHERE status = 'pending'" --format json --output orders.json
 Executando query...
 ✅ Exportado com sucesso: orders.json (15 registro(s))
 ```
@@ -608,12 +608,12 @@ Executando query...
 - O formato CSV escapa automaticamente valores que contêm vírgulas ou aspas
 - O formato JSON requer jq para formatação bonita (opcional, mas recomendado)
 
-#### `\table <query> [--page-size <n>]`
+#### `\p <query> [--page-size <n>]`
 Exibe resultados de uma query SQL em uma tabela formatada com bordas, cores alternadas, alinhamento de colunas e paginação automática. Melhora significativamente a legibilidade de resultados grandes.
 
 ```sql
-spanner> \table "SELECT user_id, name, email FROM users LIMIT 50"
-spanner> \table "SELECT * FROM orders WHERE status = 'pending'" --page-size 15
+spanner> \p "SELECT user_id, name, email FROM users LIMIT 50"
+spanner> \p "SELECT * FROM orders WHERE status = 'pending'" --page-size 15
 ```
 
 **Sintaxe:**
@@ -645,12 +645,12 @@ spanner> \table "SELECT * FROM orders WHERE status = 'pending'" --page-size 15
 
 Tabela simples:
 ```sql
-spanner> \table "SELECT user_id, name, email FROM users LIMIT 10"
+spanner> \p "SELECT user_id, name, email FROM users LIMIT 10"
 ```
 
 Tabela com paginação customizada:
 ```sql
-spanner> \table "SELECT * FROM orders ORDER BY created_at DESC" --page-size 15
+spanner> \p "SELECT * FROM orders ORDER BY created_at DESC" --page-size 15
 ```
 
 **Notas:**
@@ -660,12 +660,12 @@ spanner> \table "SELECT * FROM orders ORDER BY created_at DESC" --page-size 15
 - O comando adapta-se automaticamente à largura do terminal
 - Valores muito longos são truncados com "..."
 
-#### `\repeat <n> <comando>`
+#### `\r <n> <comando>`
 Executa um comando SQL N vezes. Útil para testes de carga, inserções em lote ou operações repetitivas.
 
 ```sql
-spanner> \repeat 5 SELECT COUNT(*) FROM users;
-spanner> \repeat 10 INSERT INTO logs (message) VALUES ('test');
+spanner> \r 5 SELECT COUNT(*) FROM users;
+spanner> \r 10 INSERT INTO logs (message) VALUES ('test');
 ```
 
 **Parâmetros:**
@@ -677,12 +677,12 @@ spanner> \repeat 10 INSERT INTO logs (message) VALUES ('test');
 - Exibe resultados de cada iteração
 - Para em caso de erro (mas não interrompe execuções anteriores)
 
-#### `\history [n]`
+#### `\hi [n]`
 Exibe os últimos N comandos executados no histórico. Por padrão, mostra os últimos 20 comandos.
 
 ```sql
-spanner> \history
-spanner> \history 50
+spanner> \hi
+spanner> \hi 50
 ```
 
 **Características:**
@@ -690,11 +690,11 @@ spanner> \history 50
 - Filtra automaticamente comandos inválidos e comentários
 - Útil para revisar comandos anteriores ou copiar queries
 
-#### `\history clear`
+#### `\hc`
 Limpa todo o histórico de comandos do Spanner Shell.
 
 ```sql
-spanner> \history clear
+spanner> \hc
 ```
 
 ---
@@ -808,27 +808,27 @@ spanner> \tail -f logs          # Monitora novos logs em tempo real
 ### Exemplo 5: Importação de Dados
 
 ```sql
-spanner> \import /path/to/data.sql
+spanner> \im /path/to/data.sql
 ```
 
 ### Exemplo 6: Exportação de Dados
 
 ```sql
 # Exportar resultados para CSV
-spanner> \export "SELECT * FROM users WHERE created_at > '2024-01-01'" --format csv --output users_2024.csv
+spanner> \e "SELECT * FROM users WHERE created_at > '2024-01-01'" --format csv --output users_2024.csv
 
 # Exportar resultados para JSON
-spanner> \export "SELECT order_id, total, status FROM orders WHERE status = 'completed'" --format json --output completed_orders.json
+spanner> \e "SELECT order_id, total, status FROM orders WHERE status = 'completed'" --format json --output completed_orders.json
 ```
 
 ### Exemplo 7: Visualização Formatada em Tabela
 
 ```sql
 # Exibir resultados em tabela formatada
-spanner> \table "SELECT user_id, name, email, status FROM users LIMIT 20"
+spanner> \p "SELECT user_id, name, email, status FROM users LIMIT 20"
 
 # Tabela com paginação customizada
-spanner> \table "SELECT * FROM orders ORDER BY created_at DESC" --page-size 15
+spanner> \p "SELECT * FROM orders ORDER BY created_at DESC" --page-size 15
 ```
 
 ### Exemplo 8: Execução Repetida

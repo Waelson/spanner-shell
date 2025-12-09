@@ -1,5 +1,5 @@
 #!/bin/bash
-SCRIPT_VERSION="1.0.10"
+SCRIPT_VERSION="1.0.11"
 
 # =========================================
 # CURSOR: BARRA PISCANTE
@@ -884,6 +884,33 @@ detect_column_type() {
 }
 
 # =========================================
+# FUNÇÃO: Detectar se um comando SQL é um SELECT
+# =========================================
+is_select_query() {
+  local sql="$1"
+  
+  # Remove espaços iniciais e finais
+  sql=$(echo "$sql" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  
+  # Remove comentários SQL de linha única (-- comentário)
+  sql=$(echo "$sql" | sed 's/--.*$//')
+  
+  # Remove comentários SQL de bloco simples (/* comentário */)
+  # Nota: Esta é uma implementação simples que não lida com comentários multi-linha complexos
+  sql=$(echo "$sql" | sed 's/\/\*[^*]*\*\///g')
+  
+  # Remove espaços novamente após remover comentários
+  sql=$(echo "$sql" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  
+  # Verifica se começa com SELECT (case-insensitive)
+  if [[ "$sql" =~ ^[Ss][Ee][Ll][Ee][Cc][Tt][[:space:]] ]]; then
+    return 0
+  fi
+  
+  return 1
+}
+
+# =========================================
 # FUNÇÃO: Calcular larguras das colunas
 # =========================================
 calculate_column_widths() {
@@ -1033,8 +1060,16 @@ format_table() {
   
   local total_lines=${#all_lines[@]}
   local data_lines=$((total_lines - 1))  # Exclui cabeçalho
+  
+  # Determina se deve usar paginação ou exibir tudo de uma vez
+  local no_pagination=false
+  if [[ $page_size -eq 0 ]] || [[ $page_size -gt 99999 ]]; then
+    no_pagination=true
+    page_size=$data_lines  # Define page_size como total de linhas para exibir tudo
+  fi
+  
   local total_pages=1
-  if [[ $data_lines -gt 0 ]]; then
+  if [[ $data_lines -gt 0 && "$no_pagination" == false ]]; then
     total_pages=$(( (data_lines + page_size - 1) / page_size ))
   fi
   
@@ -1082,7 +1117,7 @@ format_table() {
     fi
   }
   
-  # Loop de paginação
+  # Loop de paginação (ou exibição única se no_pagination=true)
   local current_page=1
   local start_data_line=1  # Começa na linha 1 (pula cabeçalho na linha 0)
   
@@ -1160,8 +1195,8 @@ format_table() {
     # Borda inferior
     draw_border "└" "┴" "┘"
     
-    # Informação de paginação
-    if [[ $total_pages -gt 1 ]]; then
+    # Informação de paginação (apenas se não estiver em modo sem paginação e houver múltiplas páginas)
+    if [[ "$no_pagination" == false && $total_pages -gt 1 ]]; then
       echo -e "${GRAY}[Página ${current_page}/${total_pages}] - Pressione Enter para próxima página, 'q' para sair${NC}"
       
       # Aguarda input
@@ -1327,26 +1362,26 @@ while true; do
   if [[ "$SQL" == "\help" || "$SQL" == "\h" ]]; then
     echo -e "${WHITE}"
     echo "Comandos disponíveis:"
-    echo "  \\dt                            → Lista tabelas"
+    echo "  \\t                             → Lista tabelas"
     echo "  \\d <tabela>                    → Describe tabela"
-    echo "  \\count <tabela>                → Conta registros de uma tabela"
-    echo "  \\sample <tabela>               → Mostra registros de exemplo (padrão: 10)"
-    echo "  \\tail <tabela> [n] [coluna]    → Mostra últimos N registros (padrão: 10, ordenado por PK ou coluna)"
-    echo "  \\tail -f <tabela> [n] [coluna] → Monitora novos registros a cada 5 segundos"
-    echo "  \\generate <tabela>             → Gera DML de exemplo (INSERT, UPDATE, SELECT, DELETE)"
-    echo "  \\diff <tabela> <id1> <id2>     → Compara dois registros e mostra diferenças"
-    echo "  \\ddl <tabela>                  → DDL de uma tabela específica"
-    echo "  \\ddl all                       → DDL completo"
-    echo "  \\pk <tabela>                   → Exibe a Primary Key da tabela"
-    echo "  \\indexes <tabela>              → Lista todos os índices da tabela"
-    echo "  \\config                        → Exibe as configurações"
-    echo "  \\import                        → Importa o conteudo de um arquivo sql com instruções DML"
-    echo "  \\import-ddl                    → Importa o conteudo de um arquivo sql com instruções DDL"
-    echo "  \\export <query> --format csv|json --output <arquivo> → Exporta resultados de query para CSV ou JSON"
-    echo "  \\table <query> [--page-size <n>] → Exibe resultados em tabela formatada com paginação"
-    echo "  \\repeat <n> <cmd>              → Executa comando N vezes"
-    echo "  \\history [n]                   → Exibe últimos N comandos (padrão: 20)"
-    echo "  \\history clear                 → Limpa o histórico"
+    echo "  \\n <tabela>                    → Conta registros de uma tabela"
+    echo "  \\s <tabela>                    → Mostra registros de exemplo (padrão: 10)"
+    echo "  \\l <tabela> [n] [coluna]       → Mostra últimos N registros (padrão: 10, ordenado por PK ou coluna)"
+    echo "  \\f <tabela> [n] [coluna]       → Monitora novos registros a cada 5 segundos"
+    echo "  \\g <tabela>                    → Gera DML de exemplo (INSERT, UPDATE, SELECT, DELETE)"
+    echo "  \\df <tabela> <id1> <id2>       → Compara dois registros e mostra diferenças"
+    echo "  \\dd <tabela>                   → DDL de uma tabela específica"
+    echo "  \\da                            → DDL completo"
+    echo "  \\k <tabela>                    → Exibe a Primary Key da tabela"
+    echo "  \\i <tabela>                    → Lista todos os índices da tabela"
+    echo "  \\c                             → Exibe as configurações"
+    echo "  \\im                            → Importa o conteudo de um arquivo sql com instruções DML"
+    echo "  \\id                            → Importa o conteudo de um arquivo sql com instruções DDL"
+    echo "  \\e <query> --format csv|json --output <arquivo> → Exporta resultados de query para CSV ou JSON"
+    echo "  \\p <query> [--page-size <n>]   → Exibe resultados em tabela formatada com paginação"
+    echo "  \\r <n> <cmd>                   → Executa comando N vezes"
+    echo "  \\hi [n]                        → Exibe últimos N comandos (padrão: 20)"
+    echo "  \\hc                            → Limpa o histórico"
     echo "  clear                          → Limpar tela"
     echo "  exit                           → Sair"
     echo -e "${NC}"
@@ -1354,10 +1389,10 @@ while true; do
     continue
   fi
 
-  # \history
-  if [[ "$SQL" =~ ^\\history($|[[:space:]]+) ]]; then
+  # \hi
+  if [[ "$SQL" =~ ^\\hi($|[[:space:]]+) ]]; then
     # Verifica se é para limpar
-    if [[ "$SQL" =~ ^\\history[[:space:]]+clear ]]; then
+    if [[ "$SQL" =~ ^\\hi[[:space:]]+clear ]] || [[ "$SQL" == "\\hc" ]]; then
       > "$HISTORY_FILE"
       history -c
       echo -e "${GREEN}✅ Histórico limpo com sucesso!${NC}"
@@ -1367,7 +1402,7 @@ while true; do
     
     # Extrai número de linhas (padrão: 20)
     num_lines=20
-    if [[ "$SQL" =~ ^\\history[[:space:]]+([0-9]+) ]]; then
+    if [[ "$SQL" =~ ^\\hi[[:space:]]+([0-9]+) ]]; then
       num_lines="${BASH_REMATCH[1]}"
     fi
     
@@ -1381,8 +1416,8 @@ while true; do
     continue
   fi
 
-  # \config
-  if [[ "$SQL" == "\config" ]]; then
+  # \c
+  if [[ "$SQL" == "\c" ]]; then
     echo -e "${WHITE}"
     echo "Configurações:"
     echo "  Profile:  ${SELECTED_NAME}"
@@ -1398,8 +1433,8 @@ while true; do
     continue
   fi
 
-  # \dt
-  if [[ "$SQL" == "\dt" ]]; then
+  # \t
+  if [[ "$SQL" == "\t" ]]; then
     echo -e "${WHITE}"
     gcloud spanner databases execute-sql ${DATABASE_ID} \
       --instance=${INSTANCE_ID} \
@@ -1410,8 +1445,8 @@ while true; do
     continue
   fi
 
-  # \ddl all (deve ser verificado antes de \ddl <tabela>)
-  if [[ "$SQL" =~ ^\\ddl[[:space:]]+all[[:space:]]*$ ]] || [[ "$SQL" == "\ddl all" ]]; then
+  # \da (deve ser verificado antes de \dd <tabela>)
+  if [[ "$SQL" == "\\da" ]] || [[ "$SQL" =~ ^\\da[[:space:]]*$ ]]; then
     echo -e "${WHITE}"
     gcloud spanner databases ddl describe ${DATABASE_ID} \
       --instance=${INSTANCE_ID}
@@ -1420,8 +1455,8 @@ while true; do
     continue
   fi
 
-  # \ddl <tabela>
-  if [[ "$SQL" =~ ^\\ddl[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
+  # \dd <tabela>
+  if [[ "$SQL" =~ ^\\dd[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
     TABLE_NAME="${BASH_REMATCH[1]}"
     echo -e "${WHITE}"
     DDL_OUTPUT=$(gcloud spanner databases ddl describe ${DATABASE_ID} \
@@ -1464,8 +1499,8 @@ while true; do
     continue
   fi
 
-  # \count <tabela>
-  if [[ "$SQL" =~ ^\\count[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
+  # \n <tabela>
+  if [[ "$SQL" =~ ^\\n[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
     TABLE_NAME="${BASH_REMATCH[1]}"
     echo -e "${WHITE}"
     echo "Contando registros na tabela '${TABLE_NAME}'..."
@@ -1478,8 +1513,8 @@ while true; do
     continue
   fi
 
-  # \sample <tabela> [n]
-  if [[ "$SQL" =~ ^\\sample[[:space:]]+([a-zA-Z0-9_]+)([[:space:]]+([0-9]+))?$ ]]; then
+  # \s <tabela> [n]
+  if [[ "$SQL" =~ ^\\s[[:space:]]+([a-zA-Z0-9_]+)([[:space:]]+([0-9]+))?$ ]]; then
     TABLE_NAME="${BASH_REMATCH[1]}"
     SAMPLE_SIZE="${BASH_REMATCH[3]:-10}"  # Padrão: 10 se não especificado
     
@@ -1502,8 +1537,8 @@ while true; do
     continue
   fi
 
-  # \tail -f <tabela> [n] [coluna] (deve ser verificado antes de \tail básico)
-  if [[ "$SQL" =~ ^\\tail[[:space:]]+-f[[:space:]]+([a-zA-Z0-9_]+)([[:space:]]+([0-9]+))?([[:space:]]+([a-zA-Z0-9_]+))?$ ]]; then
+  # \f <tabela> [n] [coluna] (deve ser verificado antes de \l básico)
+  if [[ "$SQL" =~ ^\\f[[:space:]]+([a-zA-Z0-9_]+)([[:space:]]+([0-9]+))?([[:space:]]+([a-zA-Z0-9_]+))?$ ]]; then
     TABLE_NAME="${BASH_REMATCH[1]}"
     TAIL_SIZE="${BASH_REMATCH[3]:-10}"
     ORDER_COLUMN="${BASH_REMATCH[5]}"
@@ -1650,8 +1685,8 @@ while true; do
     continue
   fi
 
-  # \tail <tabela> [n] [coluna]
-  if [[ "$SQL" =~ ^\\tail[[:space:]]+([a-zA-Z0-9_]+)([[:space:]]+([0-9]+))?([[:space:]]+([a-zA-Z0-9_]+))?$ ]]; then
+  # \l <tabela> [n] [coluna]
+  if [[ "$SQL" =~ ^\\l[[:space:]]+([a-zA-Z0-9_]+)([[:space:]]+([0-9]+))?([[:space:]]+([a-zA-Z0-9_]+))?$ ]]; then
     TABLE_NAME="${BASH_REMATCH[1]}"
     TAIL_SIZE="${BASH_REMATCH[3]:-10}"
     ORDER_COLUMN="${BASH_REMATCH[5]}"
@@ -1692,8 +1727,8 @@ while true; do
     continue
   fi
 
-  # \generate <tabela>
-  if [[ "$SQL" =~ ^\\generate[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
+  # \g <tabela>
+  if [[ "$SQL" =~ ^\\g[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
     TABLE_NAME="${BASH_REMATCH[1]}"
     generate_dml_examples "$TABLE_NAME"
     save_to_history "$SQL"
@@ -1703,7 +1738,7 @@ while true; do
 # =========================================
 # ✅ COMANDO: \repeat <n> <comando>
 # =========================================
-if [[ "$SQL" =~ ^\\repeat[[:space:]]+([0-9]+)[[:space:]]+(.+)$ ]]; then
+if [[ "$SQL" =~ ^\\r[[:space:]]+([0-9]+)[[:space:]]+(.+)$ ]]; then
   REPEAT_COUNT="${BASH_REMATCH[1]}"
   REPEAT_CMD="${BASH_REMATCH[2]}"
   
@@ -1764,14 +1799,14 @@ fi
 # =========================================
 # ✅ COMANDO: \import-ddl <arquivo.sql>
 # =========================================
-if [[ "$SQL" =~ ^\\import-ddl($|[[:space:]]+) ]]; then
+if [[ "$SQL" =~ ^\\id($|[[:space:]]+) ]]; then
 
-  # Remove o comando "\import" e captura apenas o path
-  FILE_PATH="$(echo "$SQL" | sed 's/^\\import-ddl[[:space:]]*//')"
+  # Remove o comando "\id" e captura apenas o path
+  FILE_PATH="$(echo "$SQL" | sed 's/^\\id[[:space:]]*//')"
 
   # ✅ 1. Valida se o caminho foi informado
   if [[ -z "$FILE_PATH" ]]; then
-    echo -e "${RED}❌ Uso correto: \\import-ddl <caminho-do-arquivo.sql>${NC}"
+    echo -e "${RED}❌ Uso correto: \\id <caminho-do-arquivo.sql>${NC}"
     continue
   fi
 
@@ -1803,14 +1838,14 @@ fi
 # =========================================
 # ✅ COMANDO: \import <arquivo.sql>
 # =========================================
-if [[ "$SQL" =~ ^\\import($|[[:space:]]+) ]]; then
+if [[ "$SQL" =~ ^\\im($|[[:space:]]+) ]]; then
 
-  # Remove o comando "\import" e captura apenas o path
-  FILE_PATH="$(echo "$SQL" | sed 's/^\\import[[:space:]]*//')"
+  # Remove o comando "\im" e captura apenas o path
+  FILE_PATH="$(echo "$SQL" | sed 's/^\\im[[:space:]]*//')"
 
   # ✅ 1. Valida se o caminho foi informado
   if [[ -z "$FILE_PATH" ]]; then
-    echo -e "${RED}❌ Uso correto: \\import <caminho-do-arquivo.sql>${NC}"
+    echo -e "${RED}❌ Uso correto: \\im <caminho-do-arquivo.sql>${NC}"
     continue
   fi
 
@@ -1842,7 +1877,7 @@ fi
 # =========================================
 # ✅ COMANDO: \pk <tabela>
 # =========================================
-if [[ "$SQL" =~ ^\\pk[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
+if [[ "$SQL" =~ ^\\k[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
   TABLE_NAME="${BASH_REMATCH[1]}"
 
   echo -e "${WHITE}🔑 Primary Key da tabela: ${TABLE_NAME}${NC}"
@@ -1890,7 +1925,7 @@ fi
 # =========================================
 # ✅ COMANDO: \indexes <tabela>
 # =========================================
-if [[ "$SQL" =~ ^\\indexes[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
+if [[ "$SQL" =~ ^\\i[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
   TABLE_NAME="${BASH_REMATCH[1]}"
 
   echo -e "${WHITE}📑 Índices da tabela: ${TABLE_NAME}${NC}"
@@ -1950,16 +1985,16 @@ fi
 # =========================================
 # ✅ COMANDO: \diff <tabela> <id1> <id2>
 # =========================================
-if [[ "$SQL" =~ ^\\diff($|[[:space:]]+) ]]; then
+if [[ "$SQL" =~ ^\\df($|[[:space:]]+) ]]; then
 
-  # Remove o comando "\diff" e captura apenas os parâmetros
-  PARAMS=$(echo "$SQL" | sed 's/^\\diff[[:space:]]*//')
+  # Remove o comando "\df" e captura apenas os parâmetros
+  PARAMS=$(echo "$SQL" | sed 's/^\\df[[:space:]]*//')
 
   # ✅ Valida quantidade de parâmetros
   PARAM_COUNT=$(echo "$PARAMS" | wc -w | tr -d ' ')
 
   if [[ $PARAM_COUNT -ne 3 ]]; then
-    echo -e "${RED}❌ Uso correto: \\diff <tabela> <id1> <id2>${NC}"
+    echo -e "${RED}❌ Uso correto: \\df <tabela> <id1> <id2>${NC}"
     continue
   fi
 
@@ -2177,9 +2212,9 @@ fi
 # =========================================
 # ✅ COMANDO: \export <query> --format csv|json --output <arquivo>
 # =========================================
-if [[ "$SQL" =~ ^\\export[[:space:]]+ ]]; then
-  # Remove o comando "\export" do início
-  export_cmd=$(echo "$SQL" | sed 's/^\\export[[:space:]]*//')
+if [[ "$SQL" =~ ^\\e[[:space:]]+ ]]; then
+  # Remove o comando "\e" do início
+  export_cmd=$(echo "$SQL" | sed 's/^\\e[[:space:]]*//')
   
   # Extrai query SQL (pode estar entre aspas ou não)
   query=""
@@ -2225,7 +2260,7 @@ if [[ "$SQL" =~ ^\\export[[:space:]]+ ]]; then
   # Validações
   if [[ -z "$query" ]]; then
     echo -e "${RED}❌ Query SQL não informada.${NC}"
-    echo -e "${WHITE}Uso: \\export \"<query>\" --format csv|json --output <arquivo>${NC}"
+    echo -e "${WHITE}Uso: \\e \"<query>\" --format csv|json --output <arquivo>${NC}"
     save_to_history "$SQL"
     continue
   fi
@@ -2336,11 +2371,11 @@ if [[ "$SQL" =~ ^\\export[[:space:]]+ ]]; then
   continue
 fi
 # =========================================
-# ✅ COMANDO: \table <query> [--page-size <n>]
+# ✅ COMANDO: \pagination <query> [--page-size <n>]
 # =========================================
-if [[ "$SQL" =~ ^\\table[[:space:]]+ ]]; then
-  # Remove o comando "\table" do início
-  table_cmd=$(echo "$SQL" | sed 's/^\\table[[:space:]]*//')
+if [[ "$SQL" =~ ^\\p[[:space:]]+ ]]; then
+  # Remove o comando "\p" do início
+  table_cmd=$(echo "$SQL" | sed 's/^\\p[[:space:]]*//')
   
   # Extrai query SQL e opções
   query=""
@@ -2376,7 +2411,7 @@ if [[ "$SQL" =~ ^\\table[[:space:]]+ ]]; then
   # Validações
   if [[ -z "$query" ]]; then
     echo -e "${RED}❌ Query SQL não informada.${NC}"
-    echo -e "${WHITE}Uso: \\table \"<query>\" [--page-size <n>]${NC}"
+    echo -e "${WHITE}Uso: \\p \"<query>\" [--page-size <n>]${NC}"
     save_to_history "$SQL"
     continue
   fi
@@ -2459,7 +2494,18 @@ if [ -n "$SQL" ]; then
       echo -e "${RED}❌ Erro: ${OUTPUT}${NC}"
     fi
   else
-    echo "$OUTPUT"
+    # Verifica se é um comando SELECT e se há resultados
+    if is_select_query "$SQL"; then
+      # É um SELECT: formata como tabela sem paginação
+      if [[ -n "$OUTPUT" && ! "$OUTPUT" =~ ^[[:space:]]*$ ]]; then
+        format_table "$OUTPUT" 0
+      else
+        echo -e "${GRAY}Nenhum resultado encontrado.${NC}"
+      fi
+    else
+      # Não é SELECT: mantém comportamento original
+      echo "$OUTPUT"
+    fi
   fi
 
   echo -e "${NC}"
