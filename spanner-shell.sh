@@ -314,12 +314,13 @@ show_banner() {
        |_|                                                       
 EOF
   echo 
-  echo -e "${GRAY}----------------${NC}"
+  echo -e "${GRAY}_________________${NC}"
+  echo
   echo -e "${GRAY} \033[1mVersão\033[0;90m: v${SCRIPT_VERSION}${NC}"
   if [[ -n "$SELECTED_NAME" ]]; then
     echo -e "${GRAY} \033[1mPerfil\033[0;90m: ${SELECTED_NAME}${NC}"
   fi
-  echo -e "${GRAY}----------------${NC}"
+  echo -e "${GRAY}_________________${NC}"
   echo -e "${NC}"
 }
 
@@ -346,6 +347,23 @@ clean_ansi() {
   # Remove qualquer caractere de controle restante (exceto \n, \t, etc)
   text=$(printf '%s' "$text" | tr -d '\000-\010\013-\037\177')
   printf '%s' "$text"
+}
+
+# =========================================
+# FUNÇÃO: Tratar mensagem de erro (substitui erros de sintaxe por "Comando desconhecido")
+# =========================================
+format_error_message() {
+  local error_msg="$1"
+  
+  # Converte para minúsculas para comparação case-insensitive
+  local error_lower=$(echo "$error_msg" | tr '[:upper:]' '[:lower:]')
+  
+  # Verifica se é erro de sintaxe
+  if [[ "$error_lower" =~ "syntax error" ]]; then
+    echo "Comando desconhecido"
+  else
+    echo "$error_msg"
+  fi
 }
 
 # =========================================
@@ -744,6 +762,16 @@ save_to_history() {
     return
   fi
   
+  # Ignora comandos muito longos (máximo 500 caracteres)
+  if [[ ${#clean_cmd} -gt 500 ]]; then
+    return
+  fi
+  
+  # Ignora comandos que parecem ser código do script (contêm padrões bash)
+  if [[ "$clean_cmd" =~ (BASH_REMATCH|HISTFILE|HISTSIZE|HISTFILESIZE|clean_ansi|format_table|IFS=|read -r -e|printf|sed -E|gcloud spanner|export |local |if \[\[|elif \[\[|else|fi|while|for|do|done|function |return |echo -e) ]]; then
+    return
+  fi
+  
   # Adiciona ao histórico do bash (que está isolado)
   history -s "$clean_cmd"
   
@@ -966,6 +994,7 @@ calculate_column_widths() {
 format_table() {
   local output_data="$1"
   local page_size="${2:-20}"
+  local use_alternating_colors="${3:-true}"  # Padrão: true (cor alternada ativa)
   
   # Verifica se há dados
   if [[ -z "$output_data" ]]; then
@@ -1079,7 +1108,7 @@ format_table() {
     local mid_char="$2"  # ┬, ┼, ou ┴
     local end_char="$3"  # ┐, ┤, ou ┘
     
-    echo -ne "$char"
+    echo -ne "${WHITE}$char"
     for i in $(seq 0 $((num_columns - 1))); do
       # Cada coluna tem: 1 espaço antes + conteúdo + 1 espaço depois = widths[$i] + 2
       for j in $(seq 1 $((${widths[$i]} + 2))); do
@@ -1089,7 +1118,7 @@ format_table() {
         echo -ne "$mid_char"
       fi
     done
-    echo -e "$end_char"
+    echo -e "${NC}$end_char"
   }
   
   # Função auxiliar para formatar célula
@@ -1126,7 +1155,7 @@ format_table() {
     draw_border "┌" "┬" "┐"
     
     # Cabeçalho com cor destacada
-    echo -ne "│"  # Borda esquerda primeiro
+    echo -ne "${WHITE}│${NC}"  # Borda esquerda primeiro (branca)
     echo -ne "\033[44m\033[97m"  # Aplica cor após a borda
     for i in $(seq 0 $((num_columns - 1))); do
       local header_val="${HEADER_FIELDS[$i]}"
@@ -1134,9 +1163,9 @@ format_table() {
       format_cell "$header_val" "${widths[$i]}" "left"
       if [[ $i -eq $((num_columns - 1)) ]]; then
         # Última coluna: reseta cor antes do │ final
-        echo -ne " \033[0m│"
+        echo -ne " \033[0m${WHITE}│${NC}"
       else
-        echo -ne " │"
+        echo -ne " ${WHITE}│${NC}"
       fi
     done
     echo  # Nova linha
@@ -1156,17 +1185,23 @@ format_table() {
         local data_line="${all_lines[$line_idx]}"
         IFS=$'\t' read -ra FIELDS <<< "$data_line"
         
-        # Imprime borda esquerda primeiro
-        echo -ne "│"
+        # Imprime borda esquerda primeiro (branca)
+        echo -ne "${WHITE}│${NC}"
         
-        # Aplica cor alternada após a borda
+        # Aplica cor alternada se habilitado
         local has_bg_color=false
-        if [[ $((displayed_count % 2)) -eq 1 ]]; then
-          echo -ne "\033[48;5;240m"  # Fundo cinza claro
+        if [[ "$use_alternating_colors" == "true" && $((displayed_count % 2)) -eq 1 ]]; then
           has_bg_color=true
         fi
         
         for i in $(seq 0 $((num_columns - 1))); do
+          # Aplica cor de fundo e texto branco no início de cada célula
+          if [[ "$has_bg_color" == true ]]; then
+            echo -ne "\033[48;5;240m\033[37m"  # Fundo cinza + texto branco
+          else
+            echo -ne "\033[37m"  # Apenas texto branco
+          fi
+          
           local field_val="${FIELDS[$i]:-}"
           local col_type=$(detect_column_type "$field_val")
           local align="left"
@@ -1176,16 +1211,9 @@ format_table() {
           
           echo -ne " "
           format_cell "$field_val" "${widths[$i]}" "$align"
-          if [[ $i -eq $((num_columns - 1)) ]]; then
-            # Última coluna: reseta cor antes do │ final
-            if [[ "$has_bg_color" == true ]]; then
-              echo -ne " \033[0m│"
-            else
-              echo -ne " │"
-            fi
-          else
-            echo -ne " │"
-          fi
+          
+          # Reseta cores antes da borda
+          echo -ne " \033[0m${WHITE}│${NC}"
         done
         echo  # Nova linha
         displayed_count=$((displayed_count + 1))
@@ -1218,6 +1246,7 @@ format_table() {
 
 # =========================================
 # CONFIGURAÇÃO DO READLINE PARA HISTÓRICO ISOLADO
+# O histórico é limpo a cada inicialização, mantendo apenas a sessão atual
 # =========================================
 # Salva o histórico do bash atual
 _OLD_HISTFILE="$HISTFILE"
@@ -1227,50 +1256,36 @@ _OLD_HISTSIZE="$HISTSIZE"
 export HISTFILE="$HISTORY_FILE"
 export HISTSIZE=1000
 export HISTFILESIZE=1000
-set -o history
+export HISTCONTROL=ignoredups:ignorespace:erasedups
+# Desabilita histórico durante execução do script para evitar captura de linhas do script
+set +o history
 
-# Limpa o histórico do bash para começar limpo
-history -c
-
-# Carrega apenas o histórico do spanner-shell, filtrando linhas inválidas
+# Limpa o arquivo de histórico para começar sessão limpa
+# Cada sessão mantém apenas seu próprio histórico
 if [[ -f "$HISTORY_FILE" ]]; then
-  # Cria um arquivo temporário com apenas comandos válidos
-  TEMP_HIST=$(mktemp)
-  # Filtra linhas que não são comandos válidos:
-  # - Remove linhas que começam com # (comentários)
-  # - Remove linhas vazias ou apenas espaços
-  # - Remove linhas que começam com "# =" (comentários de seção)
-  while IFS= read -r line; do
-    # Ignora linhas vazias, comentários e linhas que parecem ser código
-    if [[ -n "$line" && ! "$line" =~ ^[[:space:]]*# && ! "$line" =~ ^[[:space:]]*$ ]]; then
-      # Ignora linhas que são claramente código (contêm padrões de código)
-      if [[ ! "$line" =~ ^[[:space:]]*#.*=.*$ ]]; then
-        echo "$line" >> "$TEMP_HIST"
-      fi
-    fi
-  done < "$HISTORY_FILE"
-  
-  # Carrega o histórico filtrado
-  if [[ -s "$TEMP_HIST" ]]; then
-    history -r "$TEMP_HIST"
-  fi
-  rm -f "$TEMP_HIST"
+  > "$HISTORY_FILE"
 fi
 
 # =========================================
 # LOOP PRINCIPAL
 # =========================================
+# Habilita histórico apenas quando o loop principal começar
+set -o history
+history -c
+
 while true; do
   # Configura PS1 com códigos ANSI envolvidos em \[ \] 
   export PS1="\[${GREEN}\]spanner> \[${WHITE}\]"
   
   # Lê primeira linha para detectar tipo de comando
   if ! IFS= read -r -e -p "$(printf "${GREEN}spanner> ${WHITE}")" FIRST_LINE; then
+    # Desabilita histórico antes de sair
+    set +o history
     # Restaura histórico original antes de sair
     export HISTFILE="$_OLD_HISTFILE"
     export HISTSIZE="$_OLD_HISTSIZE"
     clear
-    echo "✅ Encerrando Spanner Shell..."
+    echo " Encerrando Spanner Shell..."
     exit 0
   fi
   
@@ -1353,6 +1368,8 @@ while true; do
   if [ "$SQL" == "exit" ]; then
     # Salva histórico antes de sair
     history -w "$HISTORY_FILE"
+    # Desabilita histórico antes de sair
+    set +o history
     clear
     echo "✅ Encerrando Spanner Shell..."
     exit 0
@@ -1389,10 +1406,19 @@ while true; do
     continue
   fi
 
+  # \hc (deve ser verificado antes de \hi)
+  if [[ "$SQL" == "\\hc" ]]; then
+    > "$HISTORY_FILE"
+    history -c
+    echo -e "${GREEN}✅ Histórico limpo com sucesso!${NC}"
+    save_to_history "$SQL"
+    continue
+  fi
+
   # \hi
   if [[ "$SQL" =~ ^\\hi($|[[:space:]]+) ]]; then
     # Verifica se é para limpar
-    if [[ "$SQL" =~ ^\\hi[[:space:]]+clear ]] || [[ "$SQL" == "\\hc" ]]; then
+    if [[ "$SQL" =~ ^\\hi[[:space:]]+clear ]]; then
       > "$HISTORY_FILE"
       history -c
       echo -e "${GREEN}✅ Histórico limpo com sucesso!${NC}"
@@ -1435,11 +1461,29 @@ while true; do
 
   # \t
   if [[ "$SQL" == "\t" ]]; then
-    echo -e "${WHITE}"
-    gcloud spanner databases execute-sql ${DATABASE_ID} \
+    TABLE_OUTPUT=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
       --instance=${INSTANCE_ID} \
       --quiet \
-      --sql="SELECT table_name FROM information_schema.tables WHERE table_schema = '' ORDER BY table_name;"
+      --sql="SELECT table_name FROM information_schema.tables WHERE table_schema = '' ORDER BY table_name;" 2>&1)
+
+    STATUS=$?
+
+    if [ $STATUS -ne 0 ]; then
+      ERROR_MSG=$(echo "$TABLE_OUTPUT" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
+      if [ -n "$ERROR_MSG" ]; then
+        FORMATTED_ERROR=$(format_error_message "$ERROR_MSG")
+        echo -e "${RED}❌ Erro: ${FORMATTED_ERROR}${NC}"
+      else
+        echo -e "${RED}❌ Erro ao listar tabelas.${NC}"
+      fi
+    else
+      if [[ -n "$TABLE_OUTPUT" && ! "$TABLE_OUTPUT" =~ ^[[:space:]]*$ ]]; then
+        format_table "$TABLE_OUTPUT" 0 false
+      else
+        echo -e "${GRAY}Nenhuma tabela encontrada.${NC}"
+      fi
+    fi
+
     echo -e "${NC}"
     save_to_history "$SQL"
     continue
@@ -1489,11 +1533,29 @@ while true; do
   # \d <tabela>
   if [[ "$SQL" =~ ^\\d[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
     TABLE_NAME="${BASH_REMATCH[1]}"
-    echo -e "${WHITE}"
-    gcloud spanner databases execute-sql ${DATABASE_ID} \
+    COLUMNS_OUTPUT=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
       --instance=${INSTANCE_ID} \
       --quiet \
-      --sql="SELECT column_name, spanner_type, is_nullable FROM information_schema.columns WHERE table_name = '${TABLE_NAME}' ORDER BY ordinal_position;"
+      --sql="SELECT column_name, spanner_type, is_nullable FROM information_schema.columns WHERE table_name = '${TABLE_NAME}' ORDER BY ordinal_position;" 2>&1)
+
+    STATUS=$?
+
+    if [ $STATUS -ne 0 ]; then
+      ERROR_MSG=$(echo "$COLUMNS_OUTPUT" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
+      if [ -n "$ERROR_MSG" ]; then
+        FORMATTED_ERROR=$(format_error_message "$ERROR_MSG")
+        echo -e "${RED}❌ Erro: ${FORMATTED_ERROR}${NC}"
+      else
+        echo -e "${RED}❌ Erro ao descrever tabela '${TABLE_NAME}'.${NC}"
+      fi
+    else
+      if [[ -n "$COLUMNS_OUTPUT" && ! "$COLUMNS_OUTPUT" =~ ^[[:space:]]*$ ]]; then
+        format_table "$COLUMNS_OUTPUT" 0 false
+      else
+        echo -e "${GRAY}Tabela '${TABLE_NAME}' não encontrada ou não possui colunas.${NC}"
+      fi
+    fi
+
     echo -e "${NC}"
     save_to_history "$SQL"
     continue
@@ -1654,14 +1716,14 @@ while true; do
           # Mostra resultados se for primeira execução ou se há novos registros
           if [[ -z "$LAST_VALUE" ]]; then
             # Primeira execução: mostra todos os últimos N registros
-            echo -e "${WHITE}$OUTPUT${NC}"
+            format_table "$OUTPUT" 0 true
             if [[ -n "$NEW_LAST_VALUE" && "$NEW_LAST_VALUE" != "NULL" ]]; then
               LAST_VALUE="$NEW_LAST_VALUE"
             fi
           elif [[ -n "$NEW_LAST_VALUE" && "$NEW_LAST_VALUE" != "NULL" && "$NEW_LAST_VALUE" != "$LAST_VALUE" ]]; then
             # Execuções subsequentes: mostra apenas se houver novos registros
             echo -e "${GREEN}[$(date +%H:%M:%S)] Novos registros encontrados:${NC}"
-            echo -e "${WHITE}$OUTPUT${NC}"
+            format_table "$OUTPUT" 0 true
             LAST_VALUE="$NEW_LAST_VALUE"
           fi
         fi
@@ -1669,7 +1731,8 @@ while true; do
         # Em caso de erro, tenta extrair mensagem
         ERROR_MSG=$(echo "$OUTPUT" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
         if [[ -n "$ERROR_MSG" ]]; then
-          echo -e "${RED}❌ Erro: ${ERROR_MSG}${NC}"
+          FORMATTED_ERROR=$(format_error_message "$ERROR_MSG")
+          echo -e "${RED}❌ Erro: ${FORMATTED_ERROR}${NC}"
         else
           echo -e "${RED}❌ Erro ao executar query${NC}"
         fi
@@ -1715,13 +1778,33 @@ while true; do
       fi
     fi
     
-    echo -e "${WHITE}"
-    echo "Mostrando últimos ${TAIL_SIZE} registros da tabela '${TABLE_NAME}' (ordenado por ${ORDER_COLUMN}):"
-    echo "----------------------------------------"
-    gcloud spanner databases execute-sql ${DATABASE_ID} \
+    # Executa query e captura saída
+    TABLE_OUTPUT=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
       --instance=${INSTANCE_ID} \
       --quiet \
-      --sql="SELECT * FROM ${TABLE_NAME} ORDER BY ${ORDER_COLUMN} DESC LIMIT ${TAIL_SIZE};"
+      --sql="SELECT * FROM ${TABLE_NAME} ORDER BY ${ORDER_COLUMN} DESC LIMIT ${TAIL_SIZE};" 2>&1)
+    
+    STATUS=$?
+    
+    if [ $STATUS -ne 0 ]; then
+      ERROR_MSG=$(echo "$TABLE_OUTPUT" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
+      if [ -n "$ERROR_MSG" ]; then
+        FORMATTED_ERROR=$(format_error_message "$ERROR_MSG")
+        echo -e "${RED}❌ Erro: ${FORMATTED_ERROR}${NC}"
+      else
+        echo -e "${RED}❌ Erro ao executar query na tabela '${TABLE_NAME}'.${NC}"
+      fi
+    else
+      if [[ -n "$TABLE_OUTPUT" && ! "$TABLE_OUTPUT" =~ ^[[:space:]]*$ ]]; then
+        echo -e "${WHITE}"
+        echo "Mostrando últimos ${TAIL_SIZE} registros da tabela '${TABLE_NAME}' (ordenado por ${ORDER_COLUMN}):"
+        echo "----------------------------------------"
+        format_table "$TABLE_OUTPUT" 0 true
+      else
+        echo -e "${GRAY}Nenhum registro encontrado na tabela '${TABLE_NAME}'.${NC}"
+      fi
+    fi
+    
     echo -e "${NC}"
     save_to_history "$SQL"
     continue
@@ -1741,6 +1824,18 @@ while true; do
 if [[ "$SQL" =~ ^\\r[[:space:]]+([0-9]+)[[:space:]]+(.+)$ ]]; then
   REPEAT_COUNT="${BASH_REMATCH[1]}"
   REPEAT_CMD="${BASH_REMATCH[2]}"
+  
+  # Remove códigos ANSI do comando
+  REPEAT_CMD=$(clean_ansi "$REPEAT_CMD")
+  REPEAT_CMD=$(clean_ansi "$REPEAT_CMD")
+  # Remove espaços no início e fim
+  REPEAT_CMD=$(printf '%s' "$REPEAT_CMD" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  # Remove aspas externas se existirem (simples ou duplas)
+  if [[ "$REPEAT_CMD" =~ ^\"(.*)\"$ ]]; then
+    REPEAT_CMD="${BASH_REMATCH[1]}"
+  elif [[ "$REPEAT_CMD" =~ ^\'(.*)\'$ ]]; then
+    REPEAT_CMD="${BASH_REMATCH[1]}"
+  fi
   
   # Valida número de repetições
   if [[ "$REPEAT_COUNT" -lt 1 || "$REPEAT_COUNT" -gt 100 ]]; then
@@ -1776,9 +1871,11 @@ if [[ "$SQL" =~ ^\\r[[:space:]]+([0-9]+)[[:space:]]+(.+)$ ]]; then
     if [ $STATUS -ne 0 ]; then
       ERROR_MSG=$(echo "$OUTPUT" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
       if [ -n "$ERROR_MSG" ]; then
-        echo -e "${RED}❌ Erro: ${ERROR_MSG}${NC}"
+        FORMATTED_ERROR=$(format_error_message "$ERROR_MSG")
+        echo -e "${RED}❌ Erro: ${FORMATTED_ERROR}${NC}"
       else
-        echo -e "${RED}❌ Erro: ${OUTPUT}${NC}"
+        FORMATTED_ERROR=$(format_error_message "$OUTPUT")
+        echo -e "${RED}❌ Erro: ${FORMATTED_ERROR}${NC}"
       fi
     else
       echo "$OUTPUT"
@@ -1900,7 +1997,8 @@ if [[ "$SQL" =~ ^\\k[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
     ERROR_MSG=$(echo "$OUTPUT" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
 
     if [ -n "$ERROR_MSG" ]; then
-      echo -e "${RED}❌ Erro: ${ERROR_MSG}${NC}"
+      FORMATTED_ERROR=$(format_error_message "$ERROR_MSG")
+      echo -e "${RED}❌ Erro: ${FORMATTED_ERROR}${NC}"
     else
       echo -e "${RED}❌ Erro ao buscar PK.${NC}"
     fi
@@ -1951,7 +2049,8 @@ if [[ "$SQL" =~ ^\\i[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
     ERROR_MSG=$(echo "$OUTPUT" | sed -n 's/.*\"message\":\"\([^\"]*\)\".*/\1/p')
 
     if [ -n "$ERROR_MSG" ]; then
-      echo -e "${RED}❌ Erro: ${ERROR_MSG}${NC}"
+      FORMATTED_ERROR=$(format_error_message "$ERROR_MSG")
+      echo -e "${RED}❌ Erro: ${FORMATTED_ERROR}${NC}"
     else
       echo -e "${RED}❌ Erro ao buscar índices.${NC}"
     fi
@@ -2311,7 +2410,8 @@ if [[ "$SQL" =~ ^\\e[[:space:]]+ ]]; then
     if [[ $STATUS -ne 0 ]]; then
       ERROR_MSG=$(echo "$json_output" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
       if [[ -n "$ERROR_MSG" ]]; then
-        echo -e "${RED}❌ Erro: ${ERROR_MSG}${NC}"
+        FORMATTED_ERROR=$(format_error_message "$ERROR_MSG")
+        echo -e "${RED}❌ Erro: ${FORMATTED_ERROR}${NC}"
       else
         echo -e "${RED}❌ Erro ao executar query.${NC}"
       fi
@@ -2339,7 +2439,8 @@ if [[ "$SQL" =~ ^\\e[[:space:]]+ ]]; then
     if [[ $STATUS -ne 0 ]]; then
       ERROR_MSG=$(echo "$csv_output" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
       if [[ -n "$ERROR_MSG" ]]; then
-        echo -e "${RED}❌ Erro: ${ERROR_MSG}${NC}"
+        FORMATTED_ERROR=$(format_error_message "$ERROR_MSG")
+        echo -e "${RED}❌ Erro: ${FORMATTED_ERROR}${NC}"
       else
         echo -e "${RED}❌ Erro ao executar query.${NC}"
       fi
@@ -2435,7 +2536,8 @@ if [[ "$SQL" =~ ^\\p[[:space:]]+ ]]; then
   if [[ $STATUS -ne 0 ]]; then
     ERROR_MSG=$(echo "$table_output" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
     if [[ -n "$ERROR_MSG" ]]; then
-      echo -e "${RED}❌ Erro: ${ERROR_MSG}${NC}"
+      FORMATTED_ERROR=$(format_error_message "$ERROR_MSG")
+      echo -e "${RED}❌ Erro: ${FORMATTED_ERROR}${NC}"
     else
       echo -e "${RED}❌ Erro ao executar query.${NC}"
     fi
@@ -2489,7 +2591,8 @@ if [ -n "$SQL" ]; then
     ERROR_MSG=$(echo "$OUTPUT" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
 
     if [ -n "$ERROR_MSG" ]; then
-      echo -e "${RED}❌ Erro: ${ERROR_MSG}${NC}"
+      FORMATTED_ERROR=$(format_error_message "$ERROR_MSG")
+      echo -e "${RED}❌ Erro: ${FORMATTED_ERROR}${NC}"
     else
       echo -e "${RED}❌ Erro: ${OUTPUT}${NC}"
     fi
