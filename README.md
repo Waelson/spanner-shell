@@ -29,6 +29,9 @@ An interactive and intuitive CLI tool for working with Google Cloud Spanner, off
 - ✅ **Special Commands**: Shortcuts for common operations (list tables, describe schemas, etc.)
 - ✅ **DML Generation**: Automatically generates examples of INSERT, UPDATE, SELECT, and DELETE
 - ✅ **Real-time Monitoring**: Track new records in tables with `\f`
+- ✅ **AI-Powered Hotspot Analysis**: Detect and prevent write hotspots using LLM (GPT-5.2, GPT-4o, etc.)
+- ✅ **Export Data**: Export query results to CSV or JSON files
+- ✅ **Record Comparison**: Compare two records and show differences
 
 ---
 
@@ -118,7 +121,7 @@ bash --version
 
 ### 5. **jq (JSON Processor)**
 
-Spanner Shell uses `jq` to process JSON responses from gcloud, especially for the `\df` command that compares records. `jq` is required for full functionality of the tool.
+Spanner Shell uses `jq` to process JSON responses from gcloud, especially for the `\df` command that compares records and the `\hotspot-ai` command for AI-powered analysis. `jq` is required for full functionality of the tool.
 
 **Installation on macOS:**
 ```bash
@@ -140,7 +143,48 @@ sudo yum install jq
 jq --version
 ```
 
-### 6. **Write Permissions**
+### 6. **curl (HTTP Client)**
+
+Required for AI-powered features like `\hotspot-ai` to communicate with OpenAI API.
+
+**Verification:**
+```bash
+curl --version
+```
+
+Most systems already have `curl` installed. If not:
+
+**Installation on macOS:**
+```bash
+brew install curl
+```
+
+**Installation on Linux:**
+```bash
+# Ubuntu/Debian
+sudo apt-get install curl
+
+# CentOS/RHEL
+sudo yum install curl
+```
+
+### 7. **OpenAI API Key (Optional - for AI Features)**
+
+To use AI-powered commands like `\hotspot-ai`, you need an OpenAI API key.
+
+**Get your API key:**
+1. Visit https://platform.openai.com/api-keys
+2. Create a new API key
+3. Configure it using `spanner-shell --llm-setup`
+
+**Supported Models:**
+- GPT-5.2
+- GPT-4o (recommended)
+- GPT-4o-mini (cost-effective)
+- GPT-4, GPT-4-turbo, GPT-3.5-turbo
+- Custom models
+
+### 8. **Write Permissions**
 
 Spanner Shell creates configuration and history files in `~/.spanner-shell/`. Make sure you have write permissions in the home directory.
 
@@ -312,6 +356,49 @@ spanner-shell --profile dev
 ```
 
 **Note:** If you don't know the exact profile name, use `--list-profile` to see all available profiles.
+
+#### `--llm-setup`
+Configures AI/LLM integration for advanced features like hotspot analysis. This setup is global and works across all profiles.
+
+```bash
+spanner-shell --llm-setup
+```
+
+**Features:**
+- Choose from popular OpenAI models (GPT-5.2, GPT-4o, GPT-4o-mini, GPT-4, GPT-4-turbo, GPT-3.5-turbo)
+- Custom model support
+- Secure API token storage (chmod 600)
+- Configuration stored at `~/.spanner-shell/llm.config`
+
+**Example:**
+```
+🤖 Spanner Shell LLM Configuration
+==================================
+
+LLM Provider:
+  1) OpenAI (default)
+  2) Exit without saving
+
+Select provider (1-2) [1]: 1
+
+OpenAI Models:
+  1) gpt-5.2
+  2) gpt-4o
+  3) gpt-4o-mini
+  4) gpt-4
+  5) gpt-4-turbo
+  6) gpt-3.5-turbo (default)
+  7) Custom model name
+
+Select model (1-7) [6]: 2
+
+API Token (leave empty to keep current): sk-...
+
+✅ LLM configuration saved successfully!
+```
+
+**Usage After Setup:**
+Once configured, you can use AI-powered commands like `\hotspot-ai` within the shell.
 
 ---
 
@@ -568,6 +655,112 @@ spanner> \i users
 - Displays index type (PRIMARY_KEY, INDEX, etc.)
 - Lists columns in each index ordered by position
 - Useful for understanding table performance optimization
+
+#### `\llm [show|select]`
+Manages LLM (AI) configuration within the interactive shell.
+
+```sql
+spanner> \llm show
+spanner> \llm select
+```
+
+**Subcommands:**
+- `show`: Displays current LLM configuration (provider, model, API token preview)
+- `select`: Selects global LLM configuration (future: support for multiple LLMs)
+
+**Example Output:**
+```
+Current LLM Configuration:
+----------------------------------------
+  Provider: openai
+  Model: gpt-4o
+  API Token: sk-proj-abc123...
+```
+
+**Note:** To configure LLM for the first time, use `spanner-shell --llm-setup` outside the shell.
+
+#### `\hotspot-ai <table>`
+**AI-powered hotspot analysis** for Spanner tables. Identifies patterns that may cause write hotspots and provides actionable recommendations.
+
+```sql
+spanner> \hotspot-ai users
+```
+
+**What is a Hotspot?**
+A hotspot occurs when many write operations concentrate on a single partition, causing performance degradation. Sequential keys (timestamps, auto-increment IDs) are the primary cause.
+
+**Features:**
+- Analyzes Primary Key patterns (sequences, timestamps, UUID)
+- Evaluates Secondary Indexes for inherited hotspots
+- Identifies Column Risks (sequential values, low cardinality)
+- Provides risk score (0-100) and level (HIGH/MEDIUM/LOW)
+- Suggests concrete solutions with code examples
+
+**Requirements:**
+- LLM must be configured (`spanner-shell --llm-setup`)
+- `curl` and `jq` installed
+
+**Example Output:**
+```
+════════════════════════════════════════════
+🔥 HOTSPOT ANALYSIS — TABLE: permissions
+════════════════════════════════════════════
+
+What is a Hotspot?
+A hotspot occurs when many write operations concentrate
+on a single partition, causing performance degradation.
+Sequential keys (timestamps, auto-increment IDs) are
+the primary cause. This analysis identifies patterns
+that may lead to hotspots in your table.
+
+------------
+Primary Key:
+------------
+- permission_id (INT64)
+- Default: GET_NEXT_SEQUENCE_VALUE(SEQUENCE permissions_seq)
+❌ Classification: Almost certain hotspot
+🧠  Reason: Sequential values concentrate all writes on single partition
+💥  Impact: Severe write bottleneck, no horizontal scaling
+
+------------------
+Secondary Indexes:
+------------------
+- permissions_name_unique → Low
+🧠  Reason: High cardinality, naturally distributed
+⚠️  Avoid: Bulk inserts with sequential names
+
+-------------
+Column Risks:
+-------------
+- created_at → Medium
+🧠  Reason: Sequential timestamp values
+💥  Impact: Would create hotspot if indexed
+⚠️  Avoid: Don't create secondary indexes
+
+- updated_at → Medium
+🧠  Reason: Sequential timestamp values
+💥  Impact: Hotspot if used in queries
+⚠️  Avoid: Avoid in high-volume WHERE clauses
+
+-----------------------
+Score Final: 70 / 100
+-----------------------
+Risk Level: 🔴 HIGH
+
+This table has HIGH risk due to sequential primary key.
+All writes concentrate on a single partition, severely
+limiting throughput under load.
+
+-------------------
+✅ Recommendations:
+-------------------
+- Use STRING UUID for primary key: permission_id STRING(36) DEFAULT (GENERATE_UUID())
+- Or add randomization: (FARM_FINGERPRINT(...) << 20) | GET_NEXT_SEQUENCE_VALUE(...)
+```
+
+**Supported Models:**
+- GPT-5.2, GPT-4o, GPT-4o-mini, GPT-4, GPT-4-turbo, GPT-3.5-turbo
+- Custom models via `--llm-setup`
 
 #### `\im <file.sql>`
 Imports and executes a SQL file containing DML instructions (INSERT, UPDATE, DELETE, SELECT).
@@ -1001,4 +1194,4 @@ For questions, suggestions, or issues, open an issue in the project repository.
 
 ---
 
-**Version:** 1.0.12
+**Version:** 1.0.13
