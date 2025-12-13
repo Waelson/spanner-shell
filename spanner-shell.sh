@@ -1,5 +1,5 @@
 #!/bin/bash
-SCRIPT_VERSION="1.0.11"
+SCRIPT_VERSION="1.0.12"
 
 # =========================================
 # CURSOR: BARRA PISCANTE
@@ -1587,13 +1587,33 @@ while true; do
       continue
     fi
     
-    echo -e "${WHITE}"
-    echo "Mostrando ${SAMPLE_SIZE} registros da tabela '${TABLE_NAME}':"
-    echo "----------------------------------------"
-    gcloud spanner databases execute-sql ${DATABASE_ID} \
+    # Executa query e captura saída
+    TABLE_OUTPUT=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
       --instance=${INSTANCE_ID} \
       --quiet \
-      --sql="SELECT * FROM ${TABLE_NAME} LIMIT ${SAMPLE_SIZE};"
+      --sql="SELECT * FROM ${TABLE_NAME} LIMIT ${SAMPLE_SIZE};" 2>&1)
+    
+    STATUS=$?
+    
+    if [ $STATUS -ne 0 ]; then
+      ERROR_MSG=$(echo "$TABLE_OUTPUT" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')
+      if [ -n "$ERROR_MSG" ]; then
+        FORMATTED_ERROR=$(format_error_message "$ERROR_MSG")
+        echo -e "${RED}❌ Erro: ${FORMATTED_ERROR}${NC}"
+      else
+        echo -e "${RED}❌ Erro ao executar query na tabela '${TABLE_NAME}'.${NC}"
+      fi
+    else
+      if [[ -n "$TABLE_OUTPUT" && ! "$TABLE_OUTPUT" =~ ^[[:space:]]*$ ]]; then
+        echo -e "${WHITE}"
+        echo "Mostrando ${SAMPLE_SIZE} registros da tabela '${TABLE_NAME}':"
+        echo "----------------------------------------"
+        format_table "$TABLE_OUTPUT" 0 true
+      else
+        echo -e "${GRAY}Nenhum registro encontrado na tabela '${TABLE_NAME}'.${NC}"
+      fi
+    fi
+    
     echo -e "${NC}"
     save_to_history "$SQL"
     continue
