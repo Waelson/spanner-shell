@@ -33,6 +33,7 @@ mkdir -p "$PROFILE_DIR"
 # =========================================
 HISTORY_DIR="$HOME/.spanner-shell"
 HISTORY_FILE="${HISTORY_DIR}/history"
+LLM_CONFIG_FILE="${HISTORY_DIR}/llm.config"
 mkdir -p "$HISTORY_DIR"
 
 # =========================================
@@ -243,6 +244,104 @@ if [[ "$1" == "--profile" && -n "$2" ]]; then
 fi
 
 # =========================================
+# COMMAND: --llm-setup (CONFIGURE LLM GLOBALLY)
+# =========================================
+if [[ "$1" == "--llm-setup" ]]; then
+  clear
+  echo -e "${WHITE}=================================${NC}"
+  echo -e "${WHITE}🤖 Spanner Shell LLM Configuration${NC}"
+  echo -e "${WHITE}=================================${NC}"
+  echo
+  
+  # Load existing configuration if exists
+  if [[ -f "$LLM_CONFIG_FILE" ]]; then
+    source "$LLM_CONFIG_FILE"
+  fi
+  
+  # Provider selection
+  echo -e "${WHITE}LLM Provider:${NC}"
+  echo "  1) OpenAI (default)"
+  echo "  2) Exit without saving"
+  echo
+  read -p "$(echo -e "${WHITE}Select provider (1-2) [${LLM_PROVIDER:-1}]: ${NC}")" PROVIDER_CHOICE
+  PROVIDER_CHOICE="${PROVIDER_CHOICE:-${LLM_PROVIDER:-1}}"
+  
+  if [[ "$PROVIDER_CHOICE" == "2" ]]; then
+    echo -e "${GRAY}Cancelled.${NC}"
+    exit 0
+  fi
+  
+  LLM_PROVIDER="openai"
+  
+  # Model selection for OpenAI
+  echo
+  echo -e "${WHITE}OpenAI Models:${NC}"
+  echo "  1) gpt-4"
+  echo "  2) gpt-4-turbo"
+  echo "  3) gpt-3.5-turbo (default)"
+  echo "  4) Custom model name"
+  echo
+  read -p "$(echo -e "${WHITE}Select model (1-4) [${LLM_MODEL:-3}]: ${NC}")" MODEL_CHOICE
+  MODEL_CHOICE="${MODEL_CHOICE:-${LLM_MODEL:-3}}"
+  
+  case "$MODEL_CHOICE" in
+    1)
+      LLM_MODEL="gpt-4"
+      ;;
+    2)
+      LLM_MODEL="gpt-4-turbo"
+      ;;
+    3)
+      LLM_MODEL="gpt-3.5-turbo"
+      ;;
+    4)
+      read -p "$(echo -e "${WHITE}Enter custom model name: ${NC}")" CUSTOM_MODEL
+      if [[ -n "$CUSTOM_MODEL" ]]; then
+        LLM_MODEL="$CUSTOM_MODEL"
+      else
+        LLM_MODEL="gpt-3.5-turbo"
+      fi
+      ;;
+    *)
+      LLM_MODEL="${LLM_MODEL:-gpt-3.5-turbo}"
+      ;;
+  esac
+  
+  # API Token
+  echo
+  read -sp "$(echo -e "${WHITE}API Token (leave empty to keep current): ${NC}")" API_TOKEN_INPUT
+  echo
+  
+  if [[ -n "$API_TOKEN_INPUT" ]]; then
+    LLM_API_KEY="$API_TOKEN_INPUT"
+  elif [[ -z "$LLM_API_KEY" ]]; then
+    echo -e "${RED}❌ API Token is required.${NC}"
+    exit 1
+  fi
+  
+  # Save configuration
+  cat <<EOF > "$LLM_CONFIG_FILE"
+LLM_PROVIDER=${LLM_PROVIDER}
+LLM_MODEL=${LLM_MODEL}
+LLM_API_KEY=${LLM_API_KEY}
+EOF
+  
+  # Set permissions to be readable only by owner
+  chmod 600 "$LLM_CONFIG_FILE"
+  
+  echo
+  echo -e "${GREEN}✅ LLM configuration saved successfully!${NC}"
+  echo -e "${WHITE}→  $LLM_CONFIG_FILE${NC}"
+  echo
+  echo -e "${WHITE}Configuration:${NC}"
+  echo -e "${WHITE}  Provider: ${LLM_PROVIDER}${NC}"
+  echo -e "${WHITE}  Model: ${LLM_MODEL}${NC}"
+  echo -e "${WHITE}  API Key: ${LLM_API_KEY:0:20}...${NC}"
+  echo
+  exit 0
+fi
+
+# =========================================
 # VALIDATE VARIABLES
 # =========================================
 if [[ -z "$PROJECT_ID" || -z "$INSTANCE_ID" || -z "$DATABASE_ID" || -z "$TYPE" ]]; then
@@ -251,8 +350,9 @@ if [[ -z "$PROJECT_ID" || -z "$INSTANCE_ID" || -z "$DATABASE_ID" || -z "$TYPE" ]
   echo
   echo -e "${WHITE}Use:${NC}"
   echo -e "${WHITE}  spanner-shell --config         # Create a new profile${NC}"
-  echo -e "${WHITE}  spanner-shell --list-profile   # List and select a profile${NC} ${NC}"
+  echo -e "${WHITE}  spanner-shell --list-profile   # List and select a profile${NC}"
   echo -e "${WHITE}  spanner-shell --profile dev    # Use a specific profile${NC}"
+  echo -e "${WHITE}  spanner-shell --llm-setup      # Configure LLM (OpenAI)${NC}"
   echo
   exit 1
 fi
@@ -340,6 +440,53 @@ EOF
   echo -e "${GRAY}_________________${NC}"
   echo -e "${NC}"
 }
+
+# =========================================
+# LLM CONFIGURATION FUNCTIONS
+# =========================================
+
+# Load LLM configuration from global file
+load_llm_config() {
+  if [[ -f "$LLM_CONFIG_FILE" ]]; then
+    source "$LLM_CONFIG_FILE"
+  fi
+}
+
+# Get current LLM provider (session override or global)
+get_current_llm_provider() {
+  if [[ -n "$CURRENT_LLM_PROVIDER" ]]; then
+    echo "$CURRENT_LLM_PROVIDER"
+  elif [[ -n "$LLM_PROVIDER" ]]; then
+    echo "$LLM_PROVIDER"
+  else
+    echo ""
+  fi
+}
+
+# Get current LLM model (session override or global)
+get_current_llm_model() {
+  if [[ -n "$CURRENT_LLM_MODEL" ]]; then
+    echo "$CURRENT_LLM_MODEL"
+  elif [[ -n "$LLM_MODEL" ]]; then
+    echo "$LLM_MODEL"
+  else
+    echo ""
+  fi
+}
+
+# Get current LLM API key (session override or global)
+get_current_llm_api_key() {
+  if [[ -n "$CURRENT_LLM_API_KEY" ]]; then
+    echo "$CURRENT_LLM_API_KEY"
+  elif [[ -n "$LLM_API_KEY" ]]; then
+    echo "$LLM_API_KEY"
+  else
+    echo ""
+  fi
+}
+
+# Load LLM configuration
+load_llm_config
 
 # =========================================
 # BANNER
@@ -1409,6 +1556,7 @@ while true; do
     echo "  \\k <table>                     → Display the Primary Key of the table"
     echo "  \\i <table>                     → List all indexes of the table"
     echo "  \\c                             → Display configuration"
+    echo "  \\llm [show|select]             → Show or select LLM configuration"
     echo "  \\im                            → Import content from a sql file with DML instructions"
     echo "  \\id                            → Import content from a sql file with DDL instructions"
     echo "  \\e <query> --format csv|json --output <file> → Export query results to CSV or JSON"
@@ -1472,6 +1620,102 @@ while true; do
       echo "  Endpoint: ${ENDPOINT}"
     fi
     echo -e "${NC}"
+    save_to_history "$SQL"
+    continue
+  fi
+
+  # \llm commands
+  if [[ "$SQL" =~ ^\\llm($|[[:space:]]) ]]; then
+    LLM_CMD=$(echo "$SQL" | sed 's/^\\llm[[:space:]]*//' | awk '{print $1}')
+    
+    case "$LLM_CMD" in
+      "show"|"")
+        CURRENT_PROVIDER=$(get_current_llm_provider)
+        CURRENT_MODEL=$(get_current_llm_model)
+        CURRENT_KEY=$(get_current_llm_api_key)
+        
+        echo -e "${WHITE}"
+        echo "Current LLM Configuration:"
+        echo "----------------------------------------"
+        
+        if [[ -n "$CURRENT_PROVIDER" ]]; then
+          echo "  Provider: ${CURRENT_PROVIDER}"
+          if [[ -n "$CURRENT_LLM_PROVIDER" ]]; then
+            echo -e "    ${GRAY}(session override)${NC}"
+          fi
+        else
+          echo -e "  Provider: ${GRAY}Not configured${NC}"
+          echo -e "${GRAY}  Use 'spanner-shell --llm-setup' to configure${NC}"
+        fi
+        
+        if [[ -n "$CURRENT_MODEL" ]]; then
+          echo "  Model: ${CURRENT_MODEL}"
+          if [[ -n "$CURRENT_LLM_MODEL" ]]; then
+            echo -e "    ${GRAY}(session override)${NC}"
+          fi
+        else
+          echo -e "  Model: ${GRAY}Not configured${NC}"
+        fi
+        
+        if [[ -n "$CURRENT_KEY" ]]; then
+          KEY_PREVIEW="${CURRENT_KEY:0:20}..."
+          echo "  API Token: ${KEY_PREVIEW}"
+          if [[ -n "$CURRENT_LLM_API_KEY" ]]; then
+            echo -e "    ${GRAY}(session override)${NC}"
+          fi
+        else
+          echo -e "  API Token: ${GRAY}Not configured${NC}"
+        fi
+        
+        echo -e "${NC}"
+        ;;
+      
+      "select")
+        # Load available LLM configurations
+        if [[ ! -f "$LLM_CONFIG_FILE" ]]; then
+          echo -e "${RED}❌ No LLM configuration found.${NC}"
+          echo -e "${WHITE}➡️  Configure with: spanner-shell --llm-setup${NC}"
+          save_to_history "$SQL"
+          continue
+        fi
+        
+        # For now, we only have one global LLM config
+        # In the future, this could support multiple LLMs
+        source "$LLM_CONFIG_FILE"
+        
+        echo -e "${WHITE}"
+        echo "Selecting LLM Configuration:"
+        echo "----------------------------------------"
+        echo "  1) Use global configuration (${LLM_PROVIDER} - ${LLM_MODEL})"
+        echo "  2) Cancel"
+        echo
+        read -p "$(echo -e "${WHITE}Select option (1-2): ${NC}")" SELECT_CHOICE
+        
+        case "$SELECT_CHOICE" in
+          1)
+            CURRENT_LLM_PROVIDER="$LLM_PROVIDER"
+            CURRENT_LLM_MODEL="$LLM_MODEL"
+            CURRENT_LLM_API_KEY="$LLM_API_KEY"
+            echo -e "${GREEN}✅ LLM configuration selected: ${LLM_PROVIDER} - ${LLM_MODEL}${NC}"
+            ;;
+          2)
+            echo -e "${GRAY}Cancelled.${NC}"
+            ;;
+          *)
+            echo -e "${RED}❌ Invalid option.${NC}"
+            ;;
+        esac
+        echo -e "${NC}"
+        ;;
+      
+      *)
+        echo -e "${RED}❌ Unknown command: ${LLM_CMD}${NC}"
+        echo -e "${WHITE}Available commands:${NC}"
+        echo -e "${WHITE}  \\llm show     → Show current LLM configuration${NC}"
+        echo -e "${WHITE}  \\llm select   → Select LLM configuration${NC}"
+        ;;
+    esac
+    
     save_to_history "$SQL"
     continue
   fi
