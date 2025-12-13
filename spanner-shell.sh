@@ -16,7 +16,9 @@ GRAY='\033[0;90m'
 NC='\033[0m'
 
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
-  echo "Spanner Shell v${SCRIPT_VERSION}"
+  echo -e "${WHITE}=======================${NC}"
+  echo -e "${WHITE}Spanner Shell v${SCRIPT_VERSION}${NC}"
+  echo -e "${WHITE}=======================${NC}"
   exit 0
 fi
 
@@ -38,14 +40,22 @@ mkdir -p "$HISTORY_DIR"
 # =========================================
 if [[ "$1" == "--config" ]]; then
   clear
-  echo "🔧 Spanner Shell Profile Creation"
+  echo -e "${WHITE}=================================${NC}"
+  echo -e "${WHITE}🔧 Spanner Shell Profile Creation${NC}"
+  echo -e "${WHITE}=================================${NC}"
   echo
 
   # Validate profile name - should not contain spaces or special characters
   while true; do
-    read -p "Profile name (ex: dev, stage, prod): " PROFILE_NAME
+    read -p "$(echo -e "${WHITE}Profile name (ex: dev, stage, prod): ${NC}")" PROFILE_NAME
     if [[ "$PROFILE_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-      break
+      # Check if profile already exists
+      PROFILE_FILE="${PROFILE_DIR}/${PROFILE_NAME}.env"
+      if [[ -f "$PROFILE_FILE" ]]; then
+        echo -e "${RED}❌ Profile '${PROFILE_NAME}' already exists. Please choose another name.${NC}"
+      else
+        break
+      fi
     else
       echo -e "${RED}❌ Invalid profile name. Use only letters, numbers, hyphens and underscores (no spaces).${NC}"
     fi
@@ -53,7 +63,7 @@ if [[ "$1" == "--config" ]]; then
   
   # Validate TYPE - must be emulator or remote
   while true; do
-    read -p "Type (emulator | remote): " TYPE
+    read -p "$(echo -e "${WHITE}Type (emulator | remote): ${NC}")" TYPE
     if [[ "$TYPE" == "emulator" || "$TYPE" == "remote" ]]; then
       break
     else
@@ -63,7 +73,7 @@ if [[ "$1" == "--config" ]]; then
   
   # Validate Project ID - should not contain spaces
   while true; do
-    read -p "Project ID: " PROJECT_ID
+    read -p "$(echo -e "${WHITE}Project ID: ${NC}")" PROJECT_ID
     if [[ -n "$PROJECT_ID" && ! "$PROJECT_ID" =~ [[:space:]] ]]; then
       break
     else
@@ -73,7 +83,7 @@ if [[ "$1" == "--config" ]]; then
   
   # Validate Instance ID - should not contain spaces
   while true; do
-    read -p "Instance ID: " INSTANCE_ID
+    read -p "$(echo -e "${WHITE}Instance ID: ${NC}")" INSTANCE_ID
     if [[ -n "$INSTANCE_ID" && ! "$INSTANCE_ID" =~ [[:space:]] ]]; then
       break
     else
@@ -83,7 +93,7 @@ if [[ "$1" == "--config" ]]; then
   
   # Validate Database ID - should not contain spaces
   while true; do
-    read -p "Database ID: " DATABASE_ID
+    read -p "$(echo -e "${WHITE}Database ID: ${NC}")" DATABASE_ID
     if [[ -n "$DATABASE_ID" && ! "$DATABASE_ID" =~ [[:space:]] ]]; then
       break
     else
@@ -94,7 +104,7 @@ if [[ "$1" == "--config" ]]; then
   # If emulator, ask for optional endpoint
   ENDPOINT=""
   if [[ "$TYPE" == "emulator" ]]; then
-    read -p "Endpoint (optional, default: http://localhost:9020/): " ENDPOINT_INPUT
+    read -p "$(echo -e "${WHITE}Endpoint (optional, default: http://localhost:9020/): ${NC}")" ENDPOINT_INPUT
     if [[ -n "$ENDPOINT_INPUT" ]]; then
       # Ensure endpoint always ends with "/"
       if [[ "$ENDPOINT_INPUT" != */ ]]; then
@@ -121,11 +131,11 @@ EOF
   fi
 
   echo
-  echo "✅ Profile created successfully:"
-  echo "➡️  $PROFILE_FILE"
+  echo -e "${WHITE}✅ Profile created successfully:${NC}"
+  echo -e "${WHITE}→  $PROFILE_FILE${NC}"
   echo
-  echo "Use it like this:"
-  echo "   spanner-shell --profile ${PROFILE_NAME}"
+  echo -e "${WHITE}Use it like this:${NC}"
+  echo -e "${WHITE}   spanner-shell --profile ${PROFILE_NAME}${NC}"
   echo
   exit 0
 fi
@@ -163,7 +173,9 @@ if [[ "$1" == "--list-profile" ]]; then
   fi
 
   # Display numbered list of profiles
+  echo -e "${WHITE}======================${NC}"
   echo -e "${WHITE}📋 Available profiles:${NC}"
+  echo -e "${WHITE}======================${NC}"
   echo
 
   # Display profiles with information
@@ -234,11 +246,14 @@ fi
 # VALIDATE VARIABLES
 # =========================================
 if [[ -z "$PROJECT_ID" || -z "$INSTANCE_ID" || -z "$DATABASE_ID" || -z "$TYPE" ]]; then
-  echo "❌ No profile loaded."
-  echo "Use:"
-  echo "  spanner-shell --config        # Create a new profile"
-  echo "  spanner-shell --list-profile   # List and select a profile"
-  echo "  spanner-shell --profile dev    # Use a specific profile"
+  echo
+  echo -e "${RED}❌ No profile loaded.${NC}"
+  echo
+  echo -e "${WHITE}Use:${NC}"
+  echo -e "${WHITE}  spanner-shell --config         # Create a new profile${NC}"
+  echo -e "${WHITE}  spanner-shell --list-profile   # List and select a profile${NC} ${NC}"
+  echo -e "${WHITE}  spanner-shell --profile dev    # Use a specific profile${NC}"
+  echo
   exit 1
 fi
 
