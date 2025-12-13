@@ -1,5 +1,5 @@
 #!/bin/bash
-SCRIPT_VERSION="1.0.12"
+SCRIPT_VERSION="1.0.13"
 
 # =========================================
 # CURSOR: BLINKING BAR
@@ -13,10 +13,13 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 WHITE='\033[0;37m'
 GRAY='\033[0;90m'
+YELLOW='\033[0;33m'
 NC='\033[0m'
 
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
-  echo "Spanner Shell v${SCRIPT_VERSION}"
+  echo -e "${WHITE}=======================${NC}"
+  echo -e "${WHITE}Spanner Shell v${SCRIPT_VERSION}${NC}"
+  echo -e "${WHITE}=======================${NC}"
   exit 0
 fi
 
@@ -31,6 +34,7 @@ mkdir -p "$PROFILE_DIR"
 # =========================================
 HISTORY_DIR="$HOME/.spanner-shell"
 HISTORY_FILE="${HISTORY_DIR}/history"
+LLM_CONFIG_FILE="${HISTORY_DIR}/llm.config"
 mkdir -p "$HISTORY_DIR"
 
 # =========================================
@@ -38,14 +42,22 @@ mkdir -p "$HISTORY_DIR"
 # =========================================
 if [[ "$1" == "--config" ]]; then
   clear
-  echo "🔧 Spanner Shell Profile Creation"
+  echo -e "${WHITE}=================================${NC}"
+  echo -e "${WHITE}🔧 Spanner Shell Profile Creation${NC}"
+  echo -e "${WHITE}=================================${NC}"
   echo
 
   # Validate profile name - should not contain spaces or special characters
   while true; do
-    read -p "Profile name (ex: dev, stage, prod): " PROFILE_NAME
+    read -p "$(echo -e "${WHITE}Profile name (ex: dev, stage, prod): ${NC}")" PROFILE_NAME
     if [[ "$PROFILE_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-      break
+      # Check if profile already exists
+      PROFILE_FILE="${PROFILE_DIR}/${PROFILE_NAME}.env"
+      if [[ -f "$PROFILE_FILE" ]]; then
+        echo -e "${RED}❌ Profile '${PROFILE_NAME}' already exists. Please choose another name.${NC}"
+      else
+        break
+      fi
     else
       echo -e "${RED}❌ Invalid profile name. Use only letters, numbers, hyphens and underscores (no spaces).${NC}"
     fi
@@ -53,7 +65,7 @@ if [[ "$1" == "--config" ]]; then
   
   # Validate TYPE - must be emulator or remote
   while true; do
-    read -p "Type (emulator | remote): " TYPE
+    read -p "$(echo -e "${WHITE}Type (emulator | remote): ${NC}")" TYPE
     if [[ "$TYPE" == "emulator" || "$TYPE" == "remote" ]]; then
       break
     else
@@ -63,7 +75,7 @@ if [[ "$1" == "--config" ]]; then
   
   # Validate Project ID - should not contain spaces
   while true; do
-    read -p "Project ID: " PROJECT_ID
+    read -p "$(echo -e "${WHITE}Project ID: ${NC}")" PROJECT_ID
     if [[ -n "$PROJECT_ID" && ! "$PROJECT_ID" =~ [[:space:]] ]]; then
       break
     else
@@ -73,7 +85,7 @@ if [[ "$1" == "--config" ]]; then
   
   # Validate Instance ID - should not contain spaces
   while true; do
-    read -p "Instance ID: " INSTANCE_ID
+    read -p "$(echo -e "${WHITE}Instance ID: ${NC}")" INSTANCE_ID
     if [[ -n "$INSTANCE_ID" && ! "$INSTANCE_ID" =~ [[:space:]] ]]; then
       break
     else
@@ -83,7 +95,7 @@ if [[ "$1" == "--config" ]]; then
   
   # Validate Database ID - should not contain spaces
   while true; do
-    read -p "Database ID: " DATABASE_ID
+    read -p "$(echo -e "${WHITE}Database ID: ${NC}")" DATABASE_ID
     if [[ -n "$DATABASE_ID" && ! "$DATABASE_ID" =~ [[:space:]] ]]; then
       break
     else
@@ -94,7 +106,7 @@ if [[ "$1" == "--config" ]]; then
   # If emulator, ask for optional endpoint
   ENDPOINT=""
   if [[ "$TYPE" == "emulator" ]]; then
-    read -p "Endpoint (optional, default: http://localhost:9020/): " ENDPOINT_INPUT
+    read -p "$(echo -e "${WHITE}Endpoint (optional, default: http://localhost:9020/): ${NC}")" ENDPOINT_INPUT
     if [[ -n "$ENDPOINT_INPUT" ]]; then
       # Ensure endpoint always ends with "/"
       if [[ "$ENDPOINT_INPUT" != */ ]]; then
@@ -121,11 +133,11 @@ EOF
   fi
 
   echo
-  echo "✅ Profile created successfully:"
-  echo "➡️  $PROFILE_FILE"
+  echo -e "${WHITE}✅ Profile created successfully:${NC}"
+  echo -e "${WHITE}→  $PROFILE_FILE${NC}"
   echo
-  echo "Use it like this:"
-  echo "   spanner-shell --profile ${PROFILE_NAME}"
+  echo -e "${WHITE}Use it like this:${NC}"
+  echo -e "${WHITE}   spanner-shell --profile ${PROFILE_NAME}${NC}"
   echo
   exit 0
 fi
@@ -163,7 +175,9 @@ if [[ "$1" == "--list-profile" ]]; then
   fi
 
   # Display numbered list of profiles
+  echo -e "${WHITE}======================${NC}"
   echo -e "${WHITE}📋 Available profiles:${NC}"
+  echo -e "${WHITE}======================${NC}"
   echo
 
   # Display profiles with information
@@ -231,14 +245,128 @@ if [[ "$1" == "--profile" && -n "$2" ]]; then
 fi
 
 # =========================================
+# COMMAND: --llm-setup (CONFIGURE LLM GLOBALLY)
+# =========================================
+if [[ "$1" == "--llm-setup" ]]; then
+  clear
+  echo -e "${WHITE}==================================${NC}"
+  echo -e "${WHITE}🤖 Spanner Shell LLM Configuration${NC}"
+  echo -e "${WHITE}==================================${NC}"
+  echo
+  
+  # Load existing configuration if exists
+  if [[ -f "$LLM_CONFIG_FILE" ]]; then
+    source "$LLM_CONFIG_FILE"
+  fi
+  
+  # Provider selection
+  echo -e "${WHITE}LLM Provider:${NC}"
+  echo "  1) OpenAI (default)"
+  echo "  2) Exit without saving"
+  echo
+  read -p "$(echo -e "${WHITE}Select provider (1-2) [${LLM_PROVIDER:-1}]: ${NC}")" PROVIDER_CHOICE
+  PROVIDER_CHOICE="${PROVIDER_CHOICE:-${LLM_PROVIDER:-1}}"
+  
+  if [[ "$PROVIDER_CHOICE" == "2" ]]; then
+    echo -e "${GRAY}Cancelled.${NC}"
+    exit 0
+  fi
+  
+  LLM_PROVIDER="openai"
+  
+  # Model selection for OpenAI
+  echo
+  echo -e "${WHITE}OpenAI Models:${NC}"
+  echo "  1) gpt-5.2"
+  echo "  2) gpt-4o"
+  echo "  3) gpt-4o-mini"
+  echo "  4) gpt-4"
+  echo "  5) gpt-4-turbo"
+  echo "  6) gpt-3.5-turbo (default)"
+  echo "  7) Custom model name"
+  echo
+  read -p "$(echo -e "${WHITE}Select model (1-7) [${LLM_MODEL:-6}]: ${NC}")" MODEL_CHOICE
+  MODEL_CHOICE="${MODEL_CHOICE:-${LLM_MODEL:-6}}"
+  
+  case "$MODEL_CHOICE" in
+    1)
+      LLM_MODEL="gpt-5.2"
+      ;;
+    2)
+      LLM_MODEL="gpt-4o"
+      ;;
+    3)
+      LLM_MODEL="gpt-4o-mini"
+      ;;
+    4)
+      LLM_MODEL="gpt-4"
+      ;;
+    5)
+      LLM_MODEL="gpt-4-turbo"
+      ;;
+    6)
+      LLM_MODEL="gpt-3.5-turbo"
+      ;;
+    7)
+      read -p "$(echo -e "${WHITE}Enter custom model name: ${NC}")" CUSTOM_MODEL
+      if [[ -n "$CUSTOM_MODEL" ]]; then
+        LLM_MODEL="$CUSTOM_MODEL"
+      else
+        LLM_MODEL="gpt-3.5-turbo"
+      fi
+      ;;
+    *)
+      LLM_MODEL="${LLM_MODEL:-gpt-3.5-turbo}"
+      ;;
+  esac
+  
+  # API Token
+  echo
+  read -sp "$(echo -e "${WHITE}API Token (leave empty to keep current): ${NC}")" API_TOKEN_INPUT
+  echo
+  
+  if [[ -n "$API_TOKEN_INPUT" ]]; then
+    LLM_API_KEY="$API_TOKEN_INPUT"
+  elif [[ -z "$LLM_API_KEY" ]]; then
+    echo -e "${RED}❌ API Token is required.${NC}"
+    exit 1
+  fi
+  
+  # Save configuration
+  cat <<EOF > "$LLM_CONFIG_FILE"
+LLM_PROVIDER=${LLM_PROVIDER}
+LLM_MODEL=${LLM_MODEL}
+LLM_API_KEY=${LLM_API_KEY}
+EOF
+  
+  # Set permissions to be readable only by owner
+  chmod 600 "$LLM_CONFIG_FILE"
+  
+  echo
+  echo -e "${GREEN}✅ LLM configuration saved successfully!${NC}"
+  echo -e "${WHITE}→  $LLM_CONFIG_FILE${NC}"
+  echo
+  echo -e "${WHITE}Configuration:${NC}"
+  echo -e "${WHITE}  Provider: ${LLM_PROVIDER}${NC}"
+  echo -e "${WHITE}  Model: ${LLM_MODEL}${NC}"
+  echo -e "${WHITE}  API Key: ${LLM_API_KEY:0:20}...${NC}"
+  echo
+  exit 0
+fi
+
+# =========================================
 # VALIDATE VARIABLES
 # =========================================
 if [[ -z "$PROJECT_ID" || -z "$INSTANCE_ID" || -z "$DATABASE_ID" || -z "$TYPE" ]]; then
-  echo "❌ No profile loaded."
-  echo "Use:"
-  echo "  spanner-shell --config        # Create a new profile"
-  echo "  spanner-shell --list-profile   # List and select a profile"
-  echo "  spanner-shell --profile dev    # Use a specific profile"
+  echo
+  echo -e "${RED}❌ No profile loaded.${NC}"
+  echo
+  echo -e "${WHITE}Use:${NC}"
+  echo -e "${WHITE}  spanner-shell --config         # Create a new profile${NC}"
+  echo -e "${WHITE}  spanner-shell --list-profile   # List and select a profile${NC}"
+  echo -e "${WHITE}  spanner-shell --profile dev    # Use a specific profile${NC}"
+  echo -e "${WHITE}  spanner-shell --llm-setup      # Configure LLM (OpenAI)${NC}"
+  echo
   exit 1
 fi
 
@@ -325,6 +453,53 @@ EOF
   echo -e "${GRAY}_________________${NC}"
   echo -e "${NC}"
 }
+
+# =========================================
+# LLM CONFIGURATION FUNCTIONS
+# =========================================
+
+# Load LLM configuration from global file
+load_llm_config() {
+  if [[ -f "$LLM_CONFIG_FILE" ]]; then
+    source "$LLM_CONFIG_FILE"
+  fi
+}
+
+# Get current LLM provider (session override or global)
+get_current_llm_provider() {
+  if [[ -n "$CURRENT_LLM_PROVIDER" ]]; then
+    echo "$CURRENT_LLM_PROVIDER"
+  elif [[ -n "$LLM_PROVIDER" ]]; then
+    echo "$LLM_PROVIDER"
+  else
+    echo ""
+  fi
+}
+
+# Get current LLM model (session override or global)
+get_current_llm_model() {
+  if [[ -n "$CURRENT_LLM_MODEL" ]]; then
+    echo "$CURRENT_LLM_MODEL"
+  elif [[ -n "$LLM_MODEL" ]]; then
+    echo "$LLM_MODEL"
+  else
+    echo ""
+  fi
+}
+
+# Get current LLM API key (session override or global)
+get_current_llm_api_key() {
+  if [[ -n "$CURRENT_LLM_API_KEY" ]]; then
+    echo "$CURRENT_LLM_API_KEY"
+  elif [[ -n "$LLM_API_KEY" ]]; then
+    echo "$LLM_API_KEY"
+  else
+    echo ""
+  fi
+}
+
+# Load LLM configuration
+load_llm_config
 
 # =========================================
 # BANNER
@@ -739,6 +914,523 @@ get_column_type() {
   done <<< "$result"
   
   return 1
+}
+
+# =========================================
+# FUNCTION: Get full database DDL (all objects)
+# =========================================
+get_full_database_ddl() {
+  gcloud spanner databases ddl describe ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} 2>/dev/null
+}
+
+# =========================================
+# FUNCTION: Get table metadata as JSON
+# =========================================
+get_table_metadata() {
+  local table_name="$1"
+  
+  # Get primary key columns with types and defaults
+  local pk_query="
+    SELECT 
+      c.column_name,
+      c.spanner_type,
+      COALESCE(c.column_default, '') as column_default
+    FROM information_schema.index_columns i
+    JOIN information_schema.columns c
+      ON i.table_name = c.table_name
+     AND i.column_name = c.column_name
+    WHERE i.table_name = '${table_name}'
+      AND i.index_type = 'PRIMARY_KEY'
+    ORDER BY i.ordinal_position;
+  "
+  
+  local pk_output=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --sql="$pk_query" 2>/dev/null)
+  
+  # Get all columns with defaults
+  local cols_query="
+    SELECT 
+      column_name,
+      spanner_type,
+      is_nullable,
+      COALESCE(column_default, '') as column_default
+    FROM information_schema.columns
+    WHERE table_name = '${table_name}'
+    ORDER BY ordinal_position;
+  "
+  
+  local cols_output=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --sql="$cols_query" 2>/dev/null)
+  
+  # Get secondary indexes
+  local idx_query="
+    SELECT DISTINCT
+      index_name,
+      index_type
+    FROM information_schema.index_columns
+    WHERE table_name = '${table_name}'
+      AND index_type != 'PRIMARY_KEY'
+    ORDER BY index_name;
+  "
+  
+  local idx_output=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --sql="$idx_query" 2>/dev/null)
+  
+  # Build JSON manually (since we don't have jq available at this point)
+  local json="{"
+  json+="\"table_name\":\"${table_name}\","
+  
+  # Primary key
+  json+="\"primary_key\":{\"columns\":["
+  local first_pk=true
+  local first_line=true
+  while IFS= read -r line; do
+    if [[ "$first_line" == true ]]; then
+      first_line=false
+      continue
+    fi
+    if [[ -n "$line" && ! "$line" =~ ^column_name ]]; then
+      local col_name=$(echo "$line" | awk '{print $1}')
+      local col_type=$(echo "$line" | awk '{for(i=2;i<NF;i++) printf "%s ", $i; print $(NF-1)}' | sed 's/[[:space:]]*$//')
+      local col_default=$(echo "$line" | awk '{print $NF}')
+      
+      if [[ "$first_pk" == false ]]; then
+        json+=","
+      fi
+      first_pk=false
+      
+      json+="{\"name\":\"${col_name}\",\"type\":\"${col_type}\",\"default\":\"${col_default}\"}"
+    fi
+  done <<< "$pk_output"
+  json+="]},"
+  
+  # Columns
+  json+="\"columns\":["
+  local first_col=true
+  first_line=true
+  while IFS= read -r line; do
+    if [[ "$first_line" == true ]]; then
+      first_line=false
+      continue
+    fi
+    if [[ -n "$line" && ! "$line" =~ ^column_name ]]; then
+      local col_name=$(echo "$line" | awk '{print $1}')
+      local col_type=$(echo "$line" | awk '{for(i=2;i<NF-1;i++) printf "%s ", $i; print $(NF-1)}' | sed 's/[[:space:]]*$//')
+      local is_nullable=$(echo "$line" | awk '{print $(NF-1)}')
+      local col_default=$(echo "$line" | awk '{print $NF}')
+      
+      if [[ "$first_col" == false ]]; then
+        json+=","
+      fi
+      first_col=false
+      
+      # Escape quotes in default value
+      col_default=$(echo "$col_default" | sed 's/"/\\"/g')
+      
+      json+="{\"name\":\"${col_name}\",\"type\":\"${col_type}\",\"nullable\":\"${is_nullable}\",\"default\":\"${col_default}\"}"
+    fi
+  done <<< "$cols_output"
+  json+="],"
+  
+  # Indexes
+  json+="\"indexes\":["
+  local first_idx=true
+  first_line=true
+  while IFS= read -r line; do
+    if [[ "$first_line" == true ]]; then
+      first_line=false
+      continue
+    fi
+    if [[ -n "$line" && ! "$line" =~ ^index_name ]]; then
+      local idx_name=$(echo "$line" | awk '{print $1}')
+      local idx_type=$(echo "$line" | awk '{print $2}')
+      
+      if [[ "$first_idx" == false ]]; then
+        json+=","
+      fi
+      first_idx=false
+      
+      json+="{\"name\":\"${idx_name}\",\"type\":\"${idx_type}\"}"
+    fi
+  done <<< "$idx_output"
+  json+="]"
+  
+  json+="}"
+  echo "$json"
+}
+
+# =========================================
+# FUNCTION: Build hotspot analysis prompt
+# =========================================
+build_hotspot_prompt() {
+  local full_ddl="$1"
+  local table_name="$2"
+  local metadata="$3"
+  
+  cat <<EOF
+You are a Google Cloud Spanner expert analyzing hotspot issues.
+
+CONTEXT ABOUT HOTSPOTS:
+Hotspots occur when many write operations concentrate on a single partition.
+Patterns that cause hotspots:
+1. Sequential PRIMARY KEY (DEFAULT GET_NEXT_SEQUENCE_VALUE(...)) → ALMOST CERTAIN HOTSPOT
+2. PRIMARY KEY with TIMESTAMP → ALMOST CERTAIN HOTSPOT
+3. INT64 PRIMARY KEY without randomization → High risk (80% of cases become hotspots)
+4. STRING UUID PRIMARY KEY → Safe
+
+COMPLETE DATABASE DDL:
+${full_ddl}
+
+TABLE TO ANALYZE: ${table_name}
+
+SPECIFIC TABLE METADATA:
+${metadata}
+
+IMPORTANT:
+- Analyze specifically the table "${table_name}"
+- Consider the complete database context (shared sequences, functions, etc)
+- Check if sequences used in the table are shared with other tables
+- Analyze custom functions that may affect key generation
+- Identify secondary indexes that may inherit hotspots from the PK
+- BE CONCISE: Keep explanations short and direct (max 1-2 sentences per field)
+
+Analyze the table "${table_name}" and return structured JSON in the format:
+{
+  "table_name": "${table_name}",
+  "primary_key_analysis": {
+    "columns": [{"name": "...", "type": "...", "default": "..."}],
+    "classification": "Almost certain hotspot" | "High risk" | "Safe",
+    "risk_score": 0-100,
+    "reason": "brief explanation (1 sentence)",
+    "impact": "performance impact in 1 sentence"
+  },
+  "secondary_indexes": [
+    {
+      "name": "...",
+      "risk": "High" | "Medium" | "Low" | "None",
+      "reason": "brief reason (1 sentence)",
+      "avoid": "short guidance (1 sentence)"
+    }
+  ],
+  "column_risks": [
+    {
+      "column": "...",
+      "risk": "High" | "Medium" | "Low",
+      "reason": "brief reason (max 10 words)",
+      "impact": "brief impact (max 10 words)",
+      "avoid": "short action (max 10 words, e.g., 'Avoid creating indexes')"
+    }
+  ],
+  "final_score": 0-100,
+  "risk_level": "HIGH" | "MEDIUM" | "LOW",
+  "risk_explanation": "concise summary (2-3 sentences max)",
+  "recommendations": [
+    "specific actionable recommendation with code examples when applicable"
+  ]
+}
+
+IMPORTANT: Return ONLY valid JSON, without any additional text before or after. Do not include explanations, comments, or markdown. Only the pure JSON object.
+EOF
+}
+
+# =========================================
+# FUNCTION: Call OpenAI API
+# =========================================
+call_openai_api() {
+  local prompt="$1"
+  local model="${2:-gpt-3.5-turbo}"
+  local api_key="$3"
+  
+  # Check if curl is installed
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "ERROR: curl is not installed" >&2
+    return 1
+  fi
+  
+  # Check if jq is installed
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "ERROR: jq is not installed" >&2
+    return 1
+  fi
+  
+  # Build JSON payload using jq for proper escaping
+  # Note: response_format is not supported by all models, so we rely on prompt instructions
+  local json_payload=$(jq -n \
+    --arg model "$model" \
+    --arg prompt "$prompt" \
+    '{
+      model: $model,
+      messages: [{role: "user", content: $prompt}],
+      temperature: 0.3
+    }' 2>/dev/null)
+  
+  if [[ -z "$json_payload" ]]; then
+    echo "ERROR: Failed to build JSON payload" >&2
+    return 1
+  fi
+  
+  # Make API call with timeout
+  local response=$(curl -s -w "\n%{http_code}" \
+    -X POST "https://api.openai.com/v1/chat/completions" \
+    -H "Authorization: Bearer ${api_key}" \
+    -H "Content-Type: application/json" \
+    -d "$json_payload" \
+    --max-time 60 2>&1)
+  
+  local http_code=$(echo "$response" | tail -n 1)
+  local body=$(echo "$response" | sed '$d')
+  
+  # Check HTTP status
+  if [[ "$http_code" != "200" ]]; then
+    case "$http_code" in
+      401)
+        echo "ERROR: Invalid API key" >&2
+        ;;
+      429)
+        echo "ERROR: Rate limit exceeded" >&2
+        ;;
+      500)
+        echo "ERROR: OpenAI server error" >&2
+        ;;
+      *)
+        echo "ERROR: HTTP $http_code - $body" >&2
+        ;;
+    esac
+    return 1
+  fi
+  
+  # Extract content from response
+  local content=$(echo "$body" | jq -r '.choices[0].message.content' 2>/dev/null)
+  
+  if [[ -z "$content" || "$content" == "null" ]]; then
+    echo "ERROR: Invalid response from API" >&2
+    return 1
+  fi
+  
+  # Try to extract JSON if the response contains text before/after JSON
+  # Remove markdown code blocks if present
+  content=$(echo "$content" | sed 's/```json//g' | sed 's/```//g' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+  
+  # Try to extract JSON object if wrapped in text
+  if ! echo "$content" | jq . >/dev/null 2>&1; then
+    # Try to find JSON object in the response
+    local json_match=$(echo "$content" | grep -o '{.*}' | head -n 1)
+    if [[ -n "$json_match" ]] && echo "$json_match" | jq . >/dev/null 2>&1; then
+      content="$json_match"
+    else
+      echo "ERROR: Could not extract valid JSON from response" >&2
+      return 1
+    fi
+  fi
+  
+  echo "$content"
+  return 0
+}
+
+# =========================================
+# FUNCTION: Format hotspot report
+# =========================================
+format_hotspot_report() {
+  local json_response="$1"
+  
+  # Validate JSON
+  if ! echo "$json_response" | jq . >/dev/null 2>&1; then
+    echo -e "${RED}❌ Invalid LLM response${NC}"
+    return 1
+  fi
+  
+  # Extract fields
+  local table_name=$(echo "$json_response" | jq -r '.table_name // empty' 2>/dev/null)
+  local final_score=$(echo "$json_response" | jq -r '.final_score // 0' 2>/dev/null)
+  local risk_level=$(echo "$json_response" | jq -r '.risk_level // "UNKNOWN"' 2>/dev/null)
+  
+  # Display header
+  echo -e "${WHITE}════════════════════════════════════════════${NC}"
+  echo -e "${WHITE}🔥 HOTSPOT ANALYSIS — TABLE: ${table_name}${NC}"
+  echo -e "${WHITE}════════════════════════════════════════════${NC}"
+  echo
+  echo -e "${GRAY}What is a Hotspot?${NC}"
+  echo -e "${GRAY}A hotspot occurs when many write operations concentrate${NC}"
+  echo -e "${GRAY}on a single partition, causing performance degradation.${NC}"
+  echo -e "${GRAY}Sequential keys (timestamps, auto-increment IDs) are${NC}"
+  echo -e "${GRAY}the primary cause. This analysis identifies patterns${NC}"
+  echo -e "${GRAY}that may lead to hotspots in your table.${NC}"
+  echo
+  
+  # Primary Key Analysis
+  echo
+  echo -e "${WHITE}------------${NC}"
+  echo -e "${WHITE}Primary Key:${NC}"
+  echo -e "${WHITE}------------${NC}"
+  local pk_columns=$(echo "$json_response" | jq -r '.primary_key_analysis.columns[]? | "\(.name) (\(.type))"' 2>/dev/null | head -5)
+  while IFS= read -r pk_line; do
+    if [[ -n "$pk_line" ]]; then
+      echo -e "${WHITE}- ${pk_line}${NC}"
+    fi
+  done <<< "$pk_columns"
+  
+  local pk_default=$(echo "$json_response" | jq -r '.primary_key_analysis.columns[0].default // ""' 2>/dev/null)
+  if [[ -n "$pk_default" && "$pk_default" != "null" && "$pk_default" != "" ]]; then
+    echo -e "${WHITE}- Default: ${pk_default}${NC}"
+  fi
+  
+  local pk_classification=$(echo "$json_response" | jq -r '.primary_key_analysis.classification // ""' 2>/dev/null)
+  local pk_reason=$(echo "$json_response" | jq -r '.primary_key_analysis.reason // ""' 2>/dev/null)
+  local pk_impact=$(echo "$json_response" | jq -r '.primary_key_analysis.impact // ""' 2>/dev/null)
+  
+  if [[ -n "$pk_classification" ]]; then
+    if [[ "$pk_classification" == *"Almost certain hotspot"* ]] || [[ "$pk_classification" == *"ALMOST CERTAIN"* ]]; then
+      echo -e "${RED}❌ Classification: ${pk_classification}${NC}"
+    elif [[ "$pk_classification" == *"High risk"* ]] || [[ "$pk_classification" == *"HIGH"* ]]; then
+      echo -e "${YELLOW}⚠️  Classification: ${pk_classification}${NC}"
+    else
+      echo -e "${GREEN}✅ Classification: ${pk_classification}${NC}"
+    fi
+    
+    if [[ -n "$pk_reason" && "$pk_reason" != "null" ]]; then
+      echo -e "${GRAY}🧠  Reason: ${pk_reason}${NC}"
+    fi
+    
+    if [[ -n "$pk_impact" && "$pk_impact" != "null" ]]; then
+      echo -e "${GRAY}💥  Impact: ${pk_impact}${NC}"
+    fi
+  fi
+  
+  echo
+  
+  # Secondary Indexes
+  local idx_count=$(echo "$json_response" | jq '.secondary_indexes | length' 2>/dev/null)
+  if [[ "$idx_count" -gt 0 ]]; then
+    echo
+    echo -e "${WHITE}------------------${NC}"
+    echo -e "${WHITE}Secondary Indexes:${NC}"
+    echo -e "${WHITE}------------------${NC}"
+    
+    echo "$json_response" | jq -c '.secondary_indexes[]?' 2>/dev/null | while IFS= read -r idx_json; do
+      local idx_name=$(echo "$idx_json" | jq -r '.name // ""')
+      local idx_risk=$(echo "$idx_json" | jq -r '.risk // "None"')
+      local idx_reason=$(echo "$idx_json" | jq -r '.reason // ""')
+      local idx_avoid=$(echo "$idx_json" | jq -r '.avoid // ""')
+      
+      if [[ -n "$idx_name" ]]; then
+        # Determine color based on risk
+        local color="${WHITE}"
+        if [[ "$idx_risk" == *"High"* ]] || [[ "$idx_risk" == *"HIGH"* ]]; then
+          color="${RED}"
+        elif [[ "$idx_risk" == *"Medium"* ]] || [[ "$idx_risk" == *"MEDIUM"* ]]; then
+          color="${YELLOW}"
+        fi
+        
+        echo -e "${color}- ${idx_name} → ${idx_risk}${NC}"
+        
+        if [[ -n "$idx_reason" && "$idx_reason" != "null" ]]; then
+          echo -e "${GRAY}🧠  Reason: ${idx_reason}${NC}"
+        fi
+        
+        if [[ -n "$idx_avoid" && "$idx_avoid" != "null" ]]; then
+          echo -e "${GRAY}⚠️  Avoid: ${idx_avoid}${NC}"
+        fi
+      fi
+    done
+    echo
+  fi
+  
+  # Column Risks
+  local col_risk_count=$(echo "$json_response" | jq '.column_risks | length' 2>/dev/null)
+  if [[ "$col_risk_count" -gt 0 ]]; then
+    echo
+    echo -e "${WHITE}-------------${NC}"
+    echo -e "${WHITE}Column Risks:${NC}"
+    echo -e "${WHITE}-------------${NC}"
+    
+    echo "$json_response" | jq -c '.column_risks[]?' 2>/dev/null | while IFS= read -r col_json; do
+      local col_name=$(echo "$col_json" | jq -r '.column // ""')
+      local col_risk=$(echo "$col_json" | jq -r '.risk // ""')
+      local col_reason=$(echo "$col_json" | jq -r '.reason // ""')
+      local col_impact=$(echo "$col_json" | jq -r '.impact // ""')
+      local col_avoid=$(echo "$col_json" | jq -r '.avoid // ""')
+      
+      if [[ -n "$col_name" ]]; then
+        # Determine color based on risk
+        local color="${WHITE}"
+        if [[ "$col_risk" == *"High"* ]] || [[ "$col_risk" == *"HIGH"* ]]; then
+          color="${RED}"
+        elif [[ "$col_risk" == *"Medium"* ]] || [[ "$col_risk" == *"MEDIUM"* ]]; then
+          color="${YELLOW}"
+        fi
+        
+        echo -e "${color}- ${col_name} → ${col_risk}${NC}"
+        
+        if [[ -n "$col_reason" && "$col_reason" != "null" ]]; then
+          echo -e "${GRAY}🧠  Reason: ${col_reason}${NC}"
+        fi
+        
+        if [[ -n "$col_impact" && "$col_impact" != "null" ]]; then
+          echo -e "${GRAY}💥  Impact: ${col_impact}${NC}"
+        fi
+        
+        if [[ -n "$col_avoid" && "$col_avoid" != "null" ]]; then
+          echo -e "${GRAY}⚠️  Avoid: ${col_avoid}${NC}"
+        fi
+        
+        echo
+      fi
+    done
+    echo
+  fi
+  
+  # Final Score and Risk Level
+  echo
+  echo -e "${WHITE}-----------------------${NC}"
+  echo -e "${WHITE}Score Final: ${final_score} / 100${NC}"
+  echo -e "${WHITE}-----------------------${NC}"
+  
+  case "$risk_level" in
+    "ALTO"|"HIGH")
+      echo -e "${RED}Risk Level: 🔴 HIGH${NC}"
+      ;;
+    "MÉDIO"|"MEDIUM")
+      echo -e "${YELLOW}Risk Level: 🟡 MEDIUM${NC}"
+      ;;
+    "BAIXO"|"LOW")
+      echo -e "${GREEN}Risk Level: 🟢 LOW${NC}"
+      ;;
+    *)
+      echo -e "${GRAY}Risk Level: ${risk_level}${NC}"
+      ;;
+  esac
+  
+  # Risk explanation
+  local risk_explanation=$(echo "$json_response" | jq -r '.risk_explanation // ""' 2>/dev/null)
+  if [[ -n "$risk_explanation" && "$risk_explanation" != "null" ]]; then
+    echo
+    echo -e "${GRAY}${risk_explanation}${NC}"
+  fi
+  
+  echo
+  
+  # Recommendations
+  local rec_count=$(echo "$json_response" | jq '.recommendations | length' 2>/dev/null)
+  if [[ "$rec_count" -gt 0 ]]; then
+    echo
+    echo -e "${WHITE}-------------------${NC}"
+    echo -e "${WHITE}✅ Recommendations:${NC}"
+    echo -e "${WHITE}-------------------${NC}"
+    echo "$json_response" | jq -r '.recommendations[]?' 2>/dev/null | while IFS= read -r rec; do
+      if [[ -n "$rec" ]]; then
+        echo -e "${WHITE}- ${rec}${NC}"
+      fi
+    done
+  fi
+  
+  echo
 }
 
 # =========================================
@@ -1394,6 +2086,8 @@ while true; do
     echo "  \\k <table>                     → Display the Primary Key of the table"
     echo "  \\i <table>                     → List all indexes of the table"
     echo "  \\c                             → Display configuration"
+    echo "  \\llm [show|select]             → Show or select LLM configuration"
+    echo "  \\hotspot-ai <table>            → AI-powered hotspot analysis for a table"
     echo "  \\im                            → Import content from a sql file with DML instructions"
     echo "  \\id                            → Import content from a sql file with DDL instructions"
     echo "  \\e <query> --format csv|json --output <file> → Export query results to CSV or JSON"
@@ -1457,6 +2151,198 @@ while true; do
       echo "  Endpoint: ${ENDPOINT}"
     fi
     echo -e "${NC}"
+    save_to_history "$SQL"
+    continue
+  fi
+
+  # \llm commands
+  if [[ "$SQL" =~ ^\\llm($|[[:space:]]) ]]; then
+    LLM_CMD=$(echo "$SQL" | sed 's/^\\llm[[:space:]]*//' | awk '{print $1}')
+    
+    case "$LLM_CMD" in
+      "show"|"")
+        CURRENT_PROVIDER=$(get_current_llm_provider)
+        CURRENT_MODEL=$(get_current_llm_model)
+        CURRENT_KEY=$(get_current_llm_api_key)
+        
+        echo -e "${WHITE}"
+        echo "Current LLM Configuration:"
+        echo "----------------------------------------"
+        
+        if [[ -n "$CURRENT_PROVIDER" ]]; then
+          echo "  Provider: ${CURRENT_PROVIDER}"
+          if [[ -n "$CURRENT_LLM_PROVIDER" ]]; then
+            echo -e "    ${GRAY}(session override)${NC}"
+          fi
+        else
+          echo -e "  Provider: ${GRAY}Not configured${NC}"
+          echo -e "${GRAY}  Use 'spanner-shell --llm-setup' to configure${NC}"
+        fi
+        
+        if [[ -n "$CURRENT_MODEL" ]]; then
+          echo "  Model: ${CURRENT_MODEL}"
+          if [[ -n "$CURRENT_LLM_MODEL" ]]; then
+            echo -e "    ${GRAY}(session override)${NC}"
+          fi
+        else
+          echo -e "  Model: ${GRAY}Not configured${NC}"
+        fi
+        
+        if [[ -n "$CURRENT_KEY" ]]; then
+          KEY_PREVIEW="${CURRENT_KEY:0:20}..."
+          echo "  API Token: ${KEY_PREVIEW}"
+          if [[ -n "$CURRENT_LLM_API_KEY" ]]; then
+            echo -e "    ${GRAY}(session override)${NC}"
+          fi
+        else
+          echo -e "  API Token: ${GRAY}Not configured${NC}"
+        fi
+        
+        echo -e "${NC}"
+        ;;
+      
+      "select")
+        # Load available LLM configurations
+        if [[ ! -f "$LLM_CONFIG_FILE" ]]; then
+          echo -e "${RED}❌ No LLM configuration found.${NC}"
+          echo -e "${WHITE}➡️  Configure with: spanner-shell --llm-setup${NC}"
+          save_to_history "$SQL"
+          continue
+        fi
+        
+        # For now, we only have one global LLM config
+        # In the future, this could support multiple LLMs
+        source "$LLM_CONFIG_FILE"
+        
+        echo -e "${WHITE}"
+        echo "Selecting LLM Configuration:"
+        echo "----------------------------------------"
+        echo "  1) Use global configuration (${LLM_PROVIDER} - ${LLM_MODEL})"
+        echo "  2) Cancel"
+        echo
+        read -p "$(echo -e "${WHITE}Select option (1-2): ${NC}")" SELECT_CHOICE
+        
+        case "$SELECT_CHOICE" in
+          1)
+            CURRENT_LLM_PROVIDER="$LLM_PROVIDER"
+            CURRENT_LLM_MODEL="$LLM_MODEL"
+            CURRENT_LLM_API_KEY="$LLM_API_KEY"
+            echo -e "${GREEN}✅ LLM configuration selected: ${LLM_PROVIDER} - ${LLM_MODEL}${NC}"
+            ;;
+          2)
+            echo -e "${GRAY}Cancelled.${NC}"
+            ;;
+          *)
+            echo -e "${RED}❌ Invalid option.${NC}"
+            ;;
+        esac
+        echo -e "${NC}"
+        ;;
+      
+      *)
+        echo -e "${RED}❌ Unknown command: ${LLM_CMD}${NC}"
+        echo -e "${WHITE}Available commands:${NC}"
+        echo -e "${WHITE}  \\llm show     → Show current LLM configuration${NC}"
+        echo -e "${WHITE}  \\llm select   → Select LLM configuration${NC}"
+        ;;
+    esac
+    
+    save_to_history "$SQL"
+    continue
+  fi
+
+  # \hotspot-ai <table>
+  if [[ "$SQL" =~ ^\\hotspot-ai[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
+    TABLE_NAME="${BASH_REMATCH[1]}"
+    
+    # Validate table exists
+    TABLE_CHECK=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+      --instance=${INSTANCE_ID} \
+      --quiet \
+      --sql="SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_name = '${TABLE_NAME}';" 2>/dev/null)
+    
+    if [[ ! "$TABLE_CHECK" =~ [1-9] ]]; then
+      echo -e "${RED}❌ Table '${TABLE_NAME}' not found.${NC}"
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    # Check dependencies
+    if ! command -v curl >/dev/null 2>&1; then
+      echo -e "${RED}❌ curl is not installed.${NC}"
+      echo -e "${WHITE}➡️  Install with:${NC}"
+      echo -e "${GRAY}   macOS: brew install curl${NC}"
+      echo -e "${GRAY}   Linux: sudo apt-get install curl${NC}"
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    if ! command -v jq >/dev/null 2>&1; then
+      echo -e "${RED}❌ jq is not installed.${NC}"
+      echo -e "${WHITE}➡️  Install with:${NC}"
+      echo -e "${GRAY}   macOS: brew install jq${NC}"
+      echo -e "${GRAY}   Linux: sudo apt-get install jq${NC}"
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    # Check LLM configuration
+    CURRENT_PROVIDER=$(get_current_llm_provider)
+    CURRENT_MODEL=$(get_current_llm_model)
+    CURRENT_KEY=$(get_current_llm_api_key)
+    
+    if [[ -z "$CURRENT_KEY" ]]; then
+      echo -e "${RED}❌ LLM not configured.${NC}"
+      echo -e "${WHITE}➡️  Configure with: spanner-shell --llm-setup${NC}"
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    if [[ "$CURRENT_PROVIDER" != "openai" ]]; then
+      echo -e "${RED}❌ Only OpenAI is supported at this time.${NC}"
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    # Show progress
+    echo -e "${WHITE}🔍 Analyzing hotspot risks for table '${TABLE_NAME}'...${NC}"
+    echo -e "${GRAY}   This may take a few seconds...${NC}"
+    echo
+    
+    # Get full database DDL
+    FULL_DDL=$(get_full_database_ddl)
+    if [[ -z "$FULL_DDL" ]]; then
+      echo -e "${RED}❌ Error obtaining DDL.${NC}"
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    # Get table metadata
+    TABLE_METADATA=$(get_table_metadata "$TABLE_NAME")
+    if [[ -z "$TABLE_METADATA" ]]; then
+      echo -e "${RED}❌ Error obtaining table metadata.${NC}"
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    # Build prompt
+    PROMPT=$(build_hotspot_prompt "$FULL_DDL" "$TABLE_NAME" "$TABLE_METADATA")
+    
+    # Call OpenAI API
+    echo -e "${GRAY}   Calling LLM...${NC}"
+    LLM_RESPONSE=$(call_openai_api "$PROMPT" "$CURRENT_MODEL" "$CURRENT_KEY" 2>&1)
+    API_STATUS=$?
+    
+    if [[ $API_STATUS -ne 0 ]]; then
+      echo -e "${RED}❌ Error calling LLM API:${NC}"
+      echo -e "${RED}${LLM_RESPONSE}${NC}"
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    # Format and display report
+    format_hotspot_report "$LLM_RESPONSE"
+    
     save_to_history "$SQL"
     continue
   fi
