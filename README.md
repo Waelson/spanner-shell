@@ -1,190 +1,190 @@
 # Spanner Shell
 
-Uma ferramenta CLI interativa e intuitiva para trabalhar com Google Cloud Spanner, oferecendo uma experiência similar ao `psql` (PostgreSQL) ou `mysql` (MySQL), mas otimizada para o ecossistema Spanner.
+An interactive and intuitive CLI tool for working with Google Cloud Spanner, offering an experience similar to `psql` (PostgreSQL) or `mysql` (MySQL), but optimized for the Spanner ecosystem.
 
-## 📋 Índice
+## 📋 Table of Contents
 
-- [Sobre o Projeto](#sobre-o-projeto)
-- [Problemas que Resolve](#problemas-que-resolve)
-- [Pré-requisitos](#pré-requisitos)
-- [Instalação](#instalação)
-- [Configuração Inicial](#configuração-inicial)
-- [Comandos Disponíveis](#comandos-disponíveis)
-- [Atualização](#atualização)
-- [Desinstalação](#desinstalação)
-- [Exemplos de Uso](#exemplos-de-uso)
-
----
-
-## 🎯 Sobre o Projeto
-
-O **Spanner Shell** é um shell interativo desenvolvido em Bash que simplifica o trabalho com bancos de dados Google Cloud Spanner. A ferramenta oferece uma interface de linha de comando amigável, permitindo executar queries SQL, gerenciar tabelas, visualizar dados e muito mais, tanto em ambientes de produção quanto no emulador local.
-
-### Características Principais
-
-- ✅ **Interface Interativa**: Prompt intuitivo similar a ferramentas SQL tradicionais
-- ✅ **Suporte a Perfis**: Gerencie múltiplos ambientes (dev, stage, prod) facilmente
-- ✅ **Emulador e Remoto**: Funciona tanto com o Spanner Emulator quanto com instâncias remotas
-- ✅ **Histórico Isolado**: Histórico de comandos dedicado para o Spanner Shell
-- ✅ **Comandos Especiais**: Atalhos para operações comuns (listar tabelas, descrever esquemas, etc.)
-- ✅ **Geração de DML**: Gera automaticamente exemplos de INSERT, UPDATE, SELECT e DELETE
-- ✅ **Monitoramento em Tempo Real**: Acompanhe novos registros em tabelas com `\tail -f`
+- [About the Project](#about-the-project)
+- [Problems it Solves](#problems-it-solves)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Initial Configuration](#initial-configuration)
+- [Available Commands](#available-commands)
+- [Update](#update)
+- [Uninstallation](#uninstallation)
+- [Usage Examples](#usage-examples)
 
 ---
 
-## 💡 Problemas que Resolve
+## 🎯 About the Project
 
-### 1. **Complexidade de Comandos gcloud**
+**Spanner Shell** is an interactive shell developed in Bash that simplifies working with Google Cloud Spanner databases. The tool offers a friendly command-line interface, allowing you to execute SQL queries, manage tables, view data, and much more, both in production environments and the local emulator.
 
-O Google Cloud SDK (`gcloud`) requer comandos verbosos e complexos para executar queries SQL no Spanner. O Spanner Shell abstrai essa complexidade, permitindo que você execute queries SQL diretamente em um ambiente interativo.
+### Key Features
 
-**Antes:**
+- ✅ **Interactive Interface**: Intuitive prompt similar to traditional SQL tools
+- ✅ **Profile Support**: Easily manage multiple environments (dev, stage, prod)
+- ✅ **Emulator and Remote**: Works with both Spanner Emulator and remote instances
+- ✅ **Isolated History**: Dedicated command history for Spanner Shell
+- ✅ **Special Commands**: Shortcuts for common operations (list tables, describe schemas, etc.)
+- ✅ **DML Generation**: Automatically generates examples of INSERT, UPDATE, SELECT, and DELETE
+- ✅ **Real-time Monitoring**: Track new records in tables with `\f`
+
+---
+
+## 💡 Problems it Solves
+
+### 1. **gcloud Command Complexity**
+
+The Google Cloud SDK (`gcloud`) requires verbose and complex commands to execute SQL queries on Spanner. Spanner Shell abstracts this complexity, allowing you to execute SQL queries directly in an interactive environment.
+
+**Before:**
 ```bash
 gcloud spanner databases execute-sql my-database \
   --instance=my-instance \
   --sql="SELECT * FROM users LIMIT 10;"
 ```
 
-**Depois:**
+**After:**
 ```sql
 spanner> SELECT * FROM users LIMIT 10;
 ```
 
-### 2. **Falta de Interface Interativa**
+### 2. **Lack of Interactive Interface**
 
-Trabalhar com Spanner via `gcloud` é baseado em comandos únicos, sem um ambiente interativo. O Spanner Shell oferece um prompt contínuo onde você pode executar múltiplas queries, explorar o banco de dados e manter contexto.
+Working with Spanner via `gcloud` is based on single commands, without an interactive environment. Spanner Shell offers a continuous prompt where you can execute multiple queries, explore the database, and maintain context.
 
-### 3. **Gerenciamento de Múltiplos Ambientes**
+### 3. **Multiple Environment Management**
 
-Alternar entre diferentes projetos, instâncias e bancos de dados requer reconfigurar variáveis de ambiente ou executar comandos longos repetidamente. O Spanner Shell resolve isso com um sistema de perfis que permite alternar rapidamente entre ambientes.
+Switching between different projects, instances, and databases requires reconfiguring environment variables or repeatedly executing long commands. Spanner Shell solves this with a profile system that allows quick switching between environments.
 
-### 4. **Exploração de Esquemas**
+### 4. **Schema Exploration**
 
-Descobrir a estrutura de tabelas, colunas e relacionamentos no Spanner pode ser trabalhoso. O Spanner Shell oferece comandos simples como `\dt` (listar tabelas) e `\d <tabela>` (descrever tabela) para facilitar a exploração.
+Discovering the structure of tables, columns, and relationships in Spanner can be laborious. Spanner Shell offers simple commands like `\t` (list tables) and `\d <table>` (describe table) to facilitate exploration.
 
-### 5. **Geração de Código DML**
+### 5. **DML Code Generation**
 
-Criar queries INSERT, UPDATE, SELECT e DELETE manualmente pode ser tedioso e propenso a erros. O comando `\generate` analisa a estrutura da tabela e gera automaticamente exemplos de DML com tipos de dados corretos.
+Creating INSERT, UPDATE, SELECT, and DELETE queries manually can be tedious and error-prone. The `\g` command analyzes the table structure and automatically generates DML examples with correct data types.
 
-### 6. **Monitoramento de Dados**
+### 6. **Data Monitoring**
 
-Acompanhar novos registros inseridos em tabelas requer executar queries repetidamente. O comando `\tail -f` monitora automaticamente novas inserções, atualizando a cada 5 segundos.
+Tracking new records inserted into tables requires repeatedly executing queries. The `\f` command automatically monitors new insertions, updating every 5 seconds.
 
 ---
 
-## 📦 Pré-requisitos
+## 📦 Prerequisites
 
 ### 1. **Google Cloud SDK (gcloud)**
 
-O Spanner Shell utiliza o `gcloud` CLI para se comunicar com o Spanner. Você precisa ter o Google Cloud SDK instalado e configurado.
+Spanner Shell uses the `gcloud` CLI to communicate with Spanner. You need to have the Google Cloud SDK installed and configured.
 
-**Instalação no macOS:**
+**Installation on macOS:**
 ```bash
 brew install --cask google-cloud-sdk
 ```
 
-**Verificação:**
+**Verification:**
 ```bash
 gcloud --version
 ```
 
-### 2. **Autenticação (para Spanner Remoto)**
+### 2. **Authentication (for Remote Spanner)**
 
-Se você planeja usar o Spanner Shell com instâncias remotas (não emulador), é necessário autenticar-se:
+If you plan to use Spanner Shell with remote instances (not emulator), you need to authenticate:
 
 ```bash
 gcloud auth login
 ```
 
-Para desenvolvimento local com o emulador, a autenticação não é necessária.
+For local development with the emulator, authentication is not required.
 
-### 3. **Spanner Emulator (Opcional)**
+### 3. **Spanner Emulator (Optional)**
 
-Para desenvolvimento local, você pode usar o Spanner Emulator. O emulador deve estar rodando na porta padrão `9020`:
+For local development, you can use the Spanner Emulator. The emulator must be running on the default port `9020`:
 
 ```bash
-# Inicie o emulador (se estiver usando Docker)
+# Start the emulator (if using Docker)
 docker run -d -p 9020:9020 -p 9010:9010 gcr.io/cloud-spanner-emulator/emulator
 ```
 
 ### 4. **Bash 4.0+**
 
-O script requer Bash moderno. A maioria dos sistemas Unix-like (macOS, Linux) já possui Bash instalado.
+The script requires modern Bash. Most Unix-like systems (macOS, Linux) already have Bash installed.
 
-**Verificação:**
+**Verification:**
 ```bash
 bash --version
 ```
 
 ### 5. **jq (JSON Processor)**
 
-O Spanner Shell utiliza `jq` para processar respostas JSON do gcloud, especialmente para o comando `\diff` que compara registros. O `jq` é necessário para o funcionamento completo da ferramenta.
+Spanner Shell uses `jq` to process JSON responses from gcloud, especially for the `\df` command that compares records. `jq` is required for full functionality of the tool.
 
-**Instalação no macOS:**
+**Installation on macOS:**
 ```bash
 brew install jq
 ```
 
-**Instalação no Linux (Ubuntu/Debian):**
+**Installation on Linux (Ubuntu/Debian):**
 ```bash
 sudo apt-get install jq
 ```
 
-**Instalação no Linux (CentOS/RHEL):**
+**Installation on Linux (CentOS/RHEL):**
 ```bash
 sudo yum install jq
 ```
 
-**Verificação:**
+**Verification:**
 ```bash
 jq --version
 ```
 
-### 6. **Permissões de Escrita**
+### 6. **Write Permissions**
 
-O Spanner Shell cria arquivos de configuração e histórico em `~/.spanner-shell/`. Certifique-se de ter permissões de escrita no diretório home.
+Spanner Shell creates configuration and history files in `~/.spanner-shell/`. Make sure you have write permissions in the home directory.
 
 ---
 
-## 🚀 Instalação
+## 🚀 Installation
 
-### Método 1: Instalação Automática (Recomendado)
+### Method 1: Automatic Installation (Recommended)
 
-1. **Clone o repositório:**
+1. **Clone the repository:**
 ```bash
 git clone https://github.com/Waelson/spanner-shell.git
 cd spanner-shell
 ```
 
-2. **Execute o script de instalação:**
+2. **Run the installation script:**
 ```bash
 ./install.sh
 ```
 
-O instalador irá:
-- Copiar o script para `/opt/homebrew/bin` (macOS com Homebrew) ou `/usr/local/bin`
-- Tornar o script executável
-- Oferecer criar um alias `spanner` (opcional)
+The installer will:
+- Copy the script to `/opt/homebrew/bin` (macOS with Homebrew) or `/usr/local/bin`
+- Make the script executable
+- Offer to create a `spanner` alias (optional)
 
-3. **Recarregue seu shell:**
+3. **Reload your shell:**
 ```bash
-source ~/.zshrc  # ou ~/.bashrc
+source ~/.zshrc  # or ~/.bashrc
 ```
 
-4. **Verifique a instalação:**
+4. **Verify installation:**
 ```bash
 spanner-shell --version
 ```
 
-### Método 2: Instalação Manual
+### Method 2: Manual Installation
 
-1. **Copie o script para um diretório no PATH:**
+1. **Copy the script to a directory in PATH:**
 ```bash
 sudo cp spanner-shell.sh /usr/local/bin/spanner-shell
 sudo chmod +x /usr/local/bin/spanner-shell
 ```
 
-2. **Crie um alias (opcional):**
+2. **Create an alias (optional):**
 ```bash
 echo "alias spanner='spanner-shell'" >> ~/.zshrc
 source ~/.zshrc
@@ -192,155 +192,155 @@ source ~/.zshrc
 
 ---
 
-## ⚙️ Configuração Inicial
+## ⚙️ Initial Configuration
 
-Antes de usar o Spanner Shell, você precisa criar um perfil de configuração. Um perfil armazena as informações de conexão (Project ID, Instance ID, Database ID) e o tipo de conexão (emulator ou remote).
+Before using Spanner Shell, you need to create a configuration profile. A profile stores connection information (Project ID, Instance ID, Database ID) and connection type (emulator or remote).
 
-### Criando um Perfil
+### Creating a Profile
 
-Execute o comando de configuração:
+Run the configuration command:
 
 ```bash
 spanner-shell --config
 ```
 
-O assistente irá solicitar:
-- **Nome do perfil**: Um identificador para o perfil (ex: `dev`, `stage`, `prod`)
-- **Tipo**: `emulator` (para desenvolvimento local) ou `remote` (para produção)
-- **Project ID**: ID do projeto Google Cloud
-- **Instance ID**: ID da instância Spanner
-- **Database ID**: ID do banco de dados Spanner
+The assistant will request:
+- **Profile name**: An identifier for the profile (e.g., `dev`, `stage`, `prod`)
+- **Type**: `emulator` (for local development) or `remote` (for production)
+- **Project ID**: Google Cloud project ID
+- **Instance ID**: Spanner instance ID
+- **Database ID**: Spanner database ID
 
-**Exemplo:**
+**Example:**
 ```
-Nome do perfil (ex: dev, stage, prod): dev
-Tipo (emulator | remote): emulator
+Profile name (ex: dev, stage, prod): dev
+Type (emulator | remote): emulator
 Project ID: my-project
 Instance ID: test-instance
 Database ID: my-database
 ```
 
-### Usando um Perfil
+### Using a Profile
 
-Após criar um perfil, você pode iniciar o Spanner Shell com ele de duas formas:
+After creating a profile, you can start Spanner Shell with it in two ways:
 
-#### Método 1: Seleção Interativa (Recomendado)
+#### Method 1: Interactive Selection (Recommended)
 
-Use o comando `--list-profile` para ver todos os perfis disponíveis e selecionar um interativamente:
+Use the `--list-profile` command to see all available profiles and select one interactively:
 
 ```bash
 spanner-shell --list-profile
 ```
 
-O script irá:
-1. Listar todos os perfis disponíveis numerados
-2. Solicitar que você digite o número do perfil desejado
-3. Carregar o perfil selecionado automaticamente
+The script will:
+1. List all available profiles numbered
+2. Request that you type the number of the desired profile
+3. Automatically load the selected profile
 
-**Exemplo de saída:**
+**Example output:**
 ```
-📋 Perfis disponíveis:
+📋 Available profiles:
 
    1) dev (remote) - projeto-dev
    2) stage (remote) - projeto-stage
    3) prod (remote) - projeto-prod
 
-Qual perfil deseja usar? (digite o número): 2
-✅ Perfil 'stage' carregado com sucesso!
+Which profile do you want to use? (enter the number): 2
+✅ Profile 'stage' loaded successfully!
 ```
 
-#### Método 2: Especificar Perfil Diretamente
+#### Method 2: Specify Profile Directly
 
-Você também pode especificar o nome do perfil diretamente:
+You can also specify the profile name directly:
 
 ```bash
 spanner-shell --profile dev
 ```
 
-O perfil será carregado automaticamente e você entrará no shell interativo.
+The profile will be loaded automatically and you'll enter the interactive shell.
 
 ---
 
-## 📚 Comandos Disponíveis
+## 📚 Available Commands
 
-### Comandos de Configuração
+### Configuration Commands
 
-#### `--version` ou `-v`
-Exibe a versão do Spanner Shell.
+#### `--version` or `-v`
+Displays the Spanner Shell version.
 
 ```bash
 spanner-shell --version
 ```
 
 #### `--config`
-Inicia o assistente interativo para criar um novo perfil de configuração.
+Starts the interactive assistant to create a new configuration profile.
 
 ```bash
 spanner-shell --config
 ```
 
 #### `--list-profile`
-Lista todos os perfis disponíveis e permite seleção interativa. Esta é a forma mais conveniente de escolher um perfil quando você tem múltiplos perfis configurados.
+Lists all available profiles and allows interactive selection. This is the most convenient way to choose a profile when you have multiple profiles configured.
 
 ```bash
 spanner-shell --list-profile
 ```
 
-**Características:**
-- Exibe todos os perfis numerados com informações (tipo e project ID)
-- Solicita seleção por número
-- Valida a entrada do usuário
-- Carrega automaticamente o perfil selecionado
+**Features:**
+- Displays all profiles numbered with information (type and project ID)
+- Requests selection by number
+- Validates user input
+- Automatically loads the selected profile
 
-**Exemplo:**
+**Example:**
 ```
-📋 Perfis disponíveis:
+📋 Available profiles:
 
    1) dev (remote) - projeto-dev
    2) stage (remote) - projeto-stage
    3) prod (remote) - projeto-prod
 
-Qual perfil deseja usar? (digite o número): 2
-✅ Perfil 'stage' carregado com sucesso!
+Which profile do you want to use? (enter the number): 2
+✅ Profile 'stage' loaded successfully!
 ```
 
-#### `--profile <nome>`
-Inicia o Spanner Shell usando um perfil específico pelo nome.
+#### `--profile <name>`
+Starts Spanner Shell using a specific profile by name.
 
 ```bash
 spanner-shell --profile dev
 ```
 
-**Nota:** Se você não souber o nome exato do perfil, use `--list-profile` para ver todos os perfis disponíveis.
+**Note:** If you don't know the exact profile name, use `--list-profile` to see all available profiles.
 
 ---
 
-### Comandos Especiais (dentro do shell)
+### Special Commands (within the shell)
 
-Todos os comandos especiais começam com `\` (barra invertida) e são executados dentro do shell interativo.
+All special commands start with `\` (backslash) and are executed within the interactive shell.
 
-#### `\help` ou `\h`
-Exibe a lista de todos os comandos disponíveis com suas descrições.
+#### `\help` or `\h`
+Displays the list of all available commands with their descriptions.
 
 ```sql
 spanner> \help
 ```
 
 #### `\c`
-Exibe as configurações atuais do perfil carregado (tipo, projeto, instância, banco de dados).
+Displays the current configuration of the loaded profile (type, project, instance, database).
 
 ```sql
 spanner> \c
 ```
 
 #### `\t`
-Lista todas as tabelas do banco de dados atual.
+Lists all tables in the current database.
 
 ```sql
-spanner> \dt
+spanner> \t
 ```
 
-**Saída:**
+**Output:**
 ```
 table_name
 ----------
@@ -349,14 +349,14 @@ orders
 products
 ```
 
-#### `\d <tabela>`
-Descreve a estrutura de uma tabela específica, mostrando colunas, tipos de dados e se são nullable.
+#### `\d <table>`
+Describes the structure of a specific table, showing columns, data types, and whether they are nullable.
 
 ```sql
 spanner> \d users
 ```
 
-**Saída:**
+**Output:**
 ```
 column_name  spanner_type    is_nullable
 -----------  --------------  -----------
@@ -366,32 +366,32 @@ email        STRING(255)     YES
 created_at   TIMESTAMP       NO
 ```
 
-#### `\n <tabela>`
-Conta o número total de registros em uma tabela.
+#### `\n <table>`
+Counts the total number of records in a table.
 
 ```sql
 spanner> \n users
 ```
 
-**Saída:**
+**Output:**
 ```
-Contando registros na tabela 'users'...
+Counting records in table 'users'...
 total
 -----
 1250
 ```
 
-#### `\s <tabela> [n]`
-Mostra uma amostra de registros de uma tabela. Por padrão, exibe 10 registros. Você pode especificar um número diferente (máximo 1000).
+#### `\s <table> [n]`
+Shows a sample of records from a table. By default, displays 10 records. You can specify a different number (maximum 1000).
 
 ```sql
 spanner> \s users
 spanner> \s users 20
 ```
 
-**Saída:**
+**Output:**
 ```
-Mostrando 10 registros da tabela 'users':
+Showing 10 records from table 'users':
 ----------------------------------------
 user_id  name           email
 -------  -------------  -------------------
@@ -400,8 +400,8 @@ user_id  name           email
 ...
 ```
 
-#### `\l <tabela> [n] [coluna]`
-Mostra os últimos N registros de uma tabela, ordenados por uma coluna específica (ou pela chave primária, se não especificada). Por padrão, mostra 10 registros.
+#### `\l <table> [n] [column]`
+Shows the last N records of a table, ordered by a specific column (or by primary key if not specified). By default, shows 10 records.
 
 ```sql
 spanner> \l users
@@ -409,41 +409,41 @@ spanner> \l users 20
 spanner> \l users 15 created_at
 ```
 
-**Parâmetros:**
-- `<tabela>`: Nome da tabela (obrigatório)
-- `[n]`: Número de registros a exibir (padrão: 10, máximo: 1000)
-- `[coluna]`: Coluna para ordenação (padrão: chave primária ou primeira coluna)
+**Parameters:**
+- `<table>`: Table name (required)
+- `[n]`: Number of records to display (default: 10, maximum: 1000)
+- `[column]`: Column for ordering (default: primary key or first column)
 
-#### `\f <tabela> [n] [coluna]`
-Monitora novos registros em uma tabela em tempo real, atualizando a cada 5 segundos. Similar ao `tail -f` do Unix.
+#### `\f <table> [n] [column]`
+Monitors new records in a table in real-time, updating every 5 seconds. Similar to Unix `tail -f`.
 
 ```sql
 spanner> \f users
 spanner> \f orders 20 order_id
 ```
 
-**Características:**
-- Exibe apenas novos registros desde a última verificação
-- Atualiza automaticamente a cada 5 segundos
-- Pressione `Ctrl+C` para parar o monitoramento
-- Ordena por chave primária ou coluna especificada
+**Features:**
+- Displays only new records since last check
+- Automatically updates every 5 seconds
+- Press `Ctrl+C` to stop monitoring
+- Orders by primary key or specified column
 
-#### `\g <tabela>`
-Gera automaticamente exemplos de comandos DML (INSERT, UPDATE, SELECT, DELETE) baseados na estrutura da tabela.
+#### `\g <table>`
+Automatically generates examples of DML commands (INSERT, UPDATE, SELECT, DELETE) based on the table structure.
 
 ```sql
 spanner> \g users
 ```
 
-**Saída:**
+**Output:**
 ```
-📝 DML de exemplo para tabela: users
+📝 Example DML for table: users
 ==========================================
 -- INSERT
 INSERT INTO users (
   user_id, name, email, created_at
 ) VALUES (
-  123, 'exemplo', 'exemplo', CURRENT_TIMESTAMP()
+  123, 'example', 'example', CURRENT_TIMESTAMP()
 );
 
 -- SELECT
@@ -454,7 +454,7 @@ WHERE
 -- UPDATE
 UPDATE users
 SET 
-  name = 'exemplo', email = 'exemplo'
+  name = 'example', email = 'example'
 WHERE 
   user_id = 123;
 
@@ -464,48 +464,50 @@ WHERE
   user_id = 123;
 ```
 
-#### `\df <tabela> <id1> <id2>`
-Compara dois registros de uma tabela e exibe as diferenças entre eles. Útil para identificar mudanças entre versões de um mesmo registro ou comparar registros diferentes.
+#### `\df <table> <id1> <id2>`
+Compares two records from a table and displays the differences between them. Useful for identifying changes between versions of the same record or comparing different records.
 
 ```sql
 spanner> \df members 216172782113783808 468374361246531584
 ```
 
-**Parâmetros:**
-- `<tabela>`: Nome da tabela (obrigatório)
-- `<id1>`: ID (chave primária) do primeiro registro a comparar
-- `<id2>`: ID (chave primária) do segundo registro a comparar
+**Parameters:**
+- `<table>`: Table name (required)
+- `<id1>`: ID (primary key) of the first record to compare
+- `<id2>`: ID (primary key) of the second record to compare
 
-**Características:**
-- Detecta automaticamente o tipo da chave primária (STRING ou INT64)
-- Compara todos os campos dos dois registros
-- Exibe apenas os campos que são diferentes
-- Mostra mensagem quando os registros são idênticos
-- Suporta todos os tipos de dados do Spanner
+**Features:**
+- Automatically detects primary key type (STRING or INT64)
+- Compares all fields of both records
+- Displays only fields that are different
+- Shows message when records are identical
+- Supports all Spanner data types
 
-**Saída:**
+**Output:**
 ```
-🔍 Comparando registros da tabela: members
+🔍 Comparing records from table: members
    ID1: 216172782113783808
    ID2: 468374361246531584
 
-📊 Diferenças encontradas:
+📊 Differences found:
 
 • user_id:
     216172782113783808 → "meli-123"
     468374361246531584 → "Waelson"
 ```
 
-**Nota:** Este comando requer `jq` instalado no sistema. Veja a seção [Pré-requisitos](#pré-requisitos) para mais informações.
+**Note:** This command requires `jq` installed on the system. See the [Prerequisites](#prerequisites) section for more information.
 
-#### `\dd <tabela>`
-Exibe o DDL (Data Definition Language) de uma tabela específica, incluindo a definição CREATE TABLE e índices relacionados.
+**Note:** The command name is `\df` (not `\diff`).
+
+#### `\dd <table>`
+Displays the DDL (Data Definition Language) of a specific table, including the CREATE TABLE definition and related indexes.
 
 ```sql
 spanner> \dd users
 ```
 
-**Saída:**
+**Output:**
 ```
 CREATE TABLE users (
   user_id INT64 NOT NULL,
@@ -516,44 +518,89 @@ CREATE TABLE users (
 ```
 
 #### `\da`
-Exibe o DDL completo de todo o banco de dados, incluindo todas as tabelas e índices.
+Displays the complete DDL of the entire database, including all tables and indexes.
 
 ```sql
 spanner> \da
 ```
 
-#### `\im <arquivo.sql>`
-Importa e executa um arquivo SQL contendo instruções DML (INSERT, UPDATE, DELETE, SELECT).
+#### `\k <table>`
+Displays the Primary Key columns of a specific table.
 
 ```sql
-spanner> \im /caminho/para/arquivo.sql
+spanner> \k users
 ```
 
-**Características:**
-- Executa todas as instruções SQL do arquivo
-- Útil para importar dados ou executar scripts de migração
-- Mostra mensagem de sucesso ou erro após a execução
+**Output:**
+```
+🔑 Primary Key of table: users
 
-**Exemplo de arquivo:**
+column_name
+-----------
+user_id
+```
+
+**Features:**
+- Shows all columns that form the primary key
+- Ordered by ordinal position
+- Useful for understanding table structure and relationships
+
+#### `\i <table>`
+Lists all indexes of a specific table, showing index name, type, and columns.
+
 ```sql
--- arquivo.sql
+spanner> \i users
+```
+
+**Output:**
+```
+📑 Indexes of table: users
+
+🔹 Index: PRIMARY_KEY (PRIMARY_KEY)
+   - user_id
+
+🔹 Index: idx_users_email (INDEX)
+   - email
+```
+
+**Features:**
+- Shows all indexes including primary key
+- Displays index type (PRIMARY_KEY, INDEX, etc.)
+- Lists columns in each index ordered by position
+- Useful for understanding table performance optimization
+
+#### `\im <file.sql>`
+Imports and executes a SQL file containing DML instructions (INSERT, UPDATE, DELETE, SELECT).
+
+```sql
+spanner> \im /path/to/file.sql
+```
+
+**Features:**
+- Executes all SQL statements in the file
+- Useful for importing data or running migration scripts
+- Shows success or error message after execution
+
+**Example file:**
+```sql
+-- file.sql
 INSERT INTO users (user_id, name, email) VALUES (1, 'João', 'joao@example.com');
 INSERT INTO users (user_id, name, email) VALUES (2, 'Maria', 'maria@example.com');
 ```
 
-#### `\id <arquivo.sql>`
-Importa e executa um arquivo SQL contendo instruções DDL (CREATE TABLE, CREATE INDEX, ALTER TABLE, etc.).
+#### `\id <file.sql>`
+Imports and executes a SQL file containing DDL instructions (CREATE TABLE, CREATE INDEX, ALTER TABLE, etc.).
 
 ```sql
-spanner> \id /caminho/para/schema.sql
+spanner> \id /path/to/schema.sql
 ```
 
-**Características:**
-- Atualiza o esquema do banco de dados
-- Útil para criar ou modificar estruturas de tabelas
-- Requer permissões adequadas no Spanner
+**Features:**
+- Updates the database schema
+- Useful for creating or modifying table structures
+- Requires appropriate permissions on Spanner
 
-**Exemplo de arquivo:**
+**Example file:**
 ```sql
 -- schema.sql
 CREATE TABLE products (
@@ -565,71 +612,71 @@ CREATE TABLE products (
 CREATE INDEX idx_products_name ON products(name);
 ```
 
-#### `\e <query> --format csv|json --output <arquivo>`
-Exporta resultados de uma query SQL para arquivo CSV ou JSON. Facilita análise de dados e integração com outras ferramentas.
+#### `\e <query> --format csv|json --output <file>`
+Exports query results to CSV or JSON file. Facilitates data analysis and integration with other tools.
 
 ```sql
 spanner> \e "SELECT * FROM users" --format csv --output users.csv
 spanner> \e "SELECT name, email FROM users WHERE active = true" --format json --output active_users.json
 ```
 
-**Sintaxe:**
-- `<query>`: Query SQL a ser executada (pode estar entre aspas simples ou duplas)
-- `--format csv|json`: Formato de saída (obrigatório)
-- `--output <arquivo>`: Caminho do arquivo de saída (obrigatório)
+**Syntax:**
+- `<query>`: SQL query to execute (can be in single or double quotes)
+- `--format csv|json`: Output format (required)
+- `--output <file>`: Output file path (required)
 
-**Características:**
-- Executa a query e exporta os resultados para o formato especificado
-- Cria automaticamente o diretório de saída se não existir
-- Avisa se o arquivo já existe (será sobrescrito)
-- Mostra número de registros exportados
-- CSV: Primeira linha contém cabeçalho com nomes das colunas
-- JSON: Formato array de objetos (usa jq para formatação se disponível)
+**Features:**
+- Executes the query and exports results to the specified format
+- Automatically creates output directory if it doesn't exist
+- Warns if file already exists (will be overwritten)
+- Shows number of exported records
+- CSV: First line contains header with column names
+- JSON: Array of objects format (uses jq for formatting if available)
 
-**Exemplos:**
+**Examples:**
 
-Exportar para CSV:
+Export to CSV:
 ```sql
 spanner> \e "SELECT user_id, name, email FROM users LIMIT 100" --format csv --output /tmp/users.csv
-Executando query...
-✅ Exportado com sucesso: /tmp/users.csv (101 linha(s))
+Executing query...
+✅ Exported successfully: /tmp/users.csv (101 line(s))
 ```
 
-Exportar para JSON:
+Export to JSON:
 ```sql
 spanner> \e "SELECT * FROM orders WHERE status = 'pending'" --format json --output orders.json
-Executando query...
-✅ Exportado com sucesso: orders.json (15 registro(s))
+Executing query...
+✅ Exported successfully: orders.json (15 record(s))
 ```
 
-**Notas:**
-- A query deve ser uma SELECT (não suporta INSERT, UPDATE, DELETE)
-- Para queries complexas, use aspas para evitar problemas de parsing
-- O formato CSV escapa automaticamente valores que contêm vírgulas ou aspas
-- O formato JSON requer jq para formatação bonita (opcional, mas recomendado)
+**Notes:**
+- The query must be a SELECT (does not support INSERT, UPDATE, DELETE)
+- For complex queries, use quotes to avoid parsing issues
+- CSV format automatically escapes values containing commas or quotes
+- JSON format requires jq for pretty formatting (optional, but recommended)
 
 #### `\p <query> [--page-size <n>]`
-Exibe resultados de uma query SQL em uma tabela formatada com bordas, cores alternadas, alinhamento de colunas e paginação automática. Melhora significativamente a legibilidade de resultados grandes.
+Displays SQL query results in a formatted table with borders, alternating colors, column alignment, and automatic pagination. Significantly improves readability of large results.
 
 ```sql
 spanner> \p "SELECT user_id, name, email FROM users LIMIT 50"
 spanner> \p "SELECT * FROM orders WHERE status = 'pending'" --page-size 15
 ```
 
-**Sintaxe:**
-- `<query>`: Query SQL a ser executada (pode estar entre aspas simples ou duplas)
-- `--page-size <n>`: Número de linhas por página (opcional, padrão: 20, mínimo: 1, máximo: 100)
+**Syntax:**
+- `<query>`: SQL query to execute (can be in single or double quotes)
+- `--page-size <n>`: Number of lines per page (optional, default: 20, minimum: 1, maximum: 100)
 
-**Características:**
-- Formatação visual com bordas usando caracteres box-drawing (┌ ┐ └ ┘ │ ─ ├ ┤ ┬ ┴ ┼)
-- Cabeçalho destacado com fundo colorido
-- Cores alternadas nas linhas para facilitar leitura
-- Alinhamento inteligente: colunas numéricas à direita, texto à esquerda
-- Paginação automática para resultados grandes
-- Adapta largura das colunas ao tamanho do terminal
-- Trunca valores muito longos automaticamente
+**Features:**
+- Visual formatting with borders using box-drawing characters (┌ ┐ └ ┘ │ ─ ├ ┤ ┬ ┴ ┼)
+- Highlighted header with colored background
+- Alternating row colors for easier reading
+- Smart alignment: numeric columns right-aligned, text left-aligned
+- Automatic pagination for large results
+- Adapts column widths to terminal size
+- Automatically truncates very long values
 
-**Exemplo de saída:**
+**Example output:**
 ```
 ┌──────────┬──────────────────────┬──────────────────────────┬─────────┐
 │ user_id  │ name                 │ email                    │ status  │
@@ -638,60 +685,60 @@ spanner> \p "SELECT * FROM orders WHERE status = 'pending'" --page-size 15
 │ 2        │ Maria Santos         │ maria@example.com       │ active  │
 │ 3        │ Pedro Oliveira       │ pedro@example.com       │ inactive│
 └──────────┴──────────────────────┴──────────────────────────┴─────────┘
-[Página 1/3] - Pressione Enter para próxima página, 'q' para sair
+[Page 1/3] - Press Enter for next page, 'q' to exit
 ```
 
-**Exemplos:**
+**Examples:**
 
-Tabela simples:
+Simple table:
 ```sql
 spanner> \p "SELECT user_id, name, email FROM users LIMIT 10"
 ```
 
-Tabela com paginação customizada:
+Table with custom pagination:
 ```sql
 spanner> \p "SELECT * FROM orders ORDER BY created_at DESC" --page-size 15
 ```
 
-**Notas:**
-- A query deve ser uma SELECT (não suporta INSERT, UPDATE, DELETE)
-- Para muitos registros, considere usar LIMIT na query para melhor performance
-- Pressione 'q' durante a paginação para sair
-- O comando adapta-se automaticamente à largura do terminal
-- Valores muito longos são truncados com "..."
+**Notes:**
+- The query must be a SELECT (does not support INSERT, UPDATE, DELETE)
+- For many records, consider using LIMIT in the query for better performance
+- Press 'q' during pagination to exit
+- Command automatically adapts to terminal width
+- Very long values are truncated with "..."
 
-#### `\r <n> <comando>`
-Executa um comando SQL N vezes. Útil para testes de carga, inserções em lote ou operações repetitivas.
+#### `\r <n> <command>`
+Executes a SQL command N times. Useful for load testing, batch insertions, or repetitive operations.
 
 ```sql
 spanner> \r 5 SELECT COUNT(*) FROM users;
 spanner> \r 10 INSERT INTO logs (message) VALUES ('test');
 ```
 
-**Parâmetros:**
-- `<n>`: Número de repetições (mínimo: 1, máximo: 100)
-- `<comando>`: Comando SQL a ser executado
+**Parameters:**
+- `<n>`: Number of repetitions (minimum: 1, maximum: 100)
+- `<command>`: SQL command to execute
 
-**Características:**
-- Mostra o progresso de cada execução
-- Exibe resultados de cada iteração
-- Para em caso de erro (mas não interrompe execuções anteriores)
+**Features:**
+- Shows progress of each execution
+- Displays results of each iteration
+- Stops on error (but doesn't interrupt previous executions)
 
 #### `\hi [n]`
-Exibe os últimos N comandos executados no histórico. Por padrão, mostra os últimos 20 comandos.
+Displays the last N commands executed in history. By default, shows the last 20 commands.
 
 ```sql
 spanner> \hi
 spanner> \hi 50
 ```
 
-**Características:**
-- Histórico isolado do Spanner Shell (não mistura com histórico do terminal)
-- Filtra automaticamente comandos inválidos e comentários
-- Útil para revisar comandos anteriores ou copiar queries
+**Features:**
+- Isolated history from Spanner Shell (doesn't mix with terminal history)
+- Automatically filters invalid commands and comments
+- Useful for reviewing previous commands or copying queries
 
 #### `\hc`
-Limpa todo o histórico de comandos do Spanner Shell.
+Clears all command history from Spanner Shell.
 
 ```sql
 spanner> \hc
@@ -699,17 +746,17 @@ spanner> \hc
 
 ---
 
-### Comandos de Sistema
+### System Commands
 
 #### `clear`
-Limpa a tela do terminal, similar ao comando `clear` do Unix.
+Clears the terminal screen, similar to Unix `clear` command.
 
 ```sql
 spanner> clear
 ```
 
 #### `exit`
-Encerra o Spanner Shell e retorna ao terminal.
+Exits Spanner Shell and returns to terminal.
 
 ```sql
 spanner> exit
@@ -717,9 +764,9 @@ spanner> exit
 
 ---
 
-### Execução de SQL Direto
+### Direct SQL Execution
 
-Além dos comandos especiais, você pode executar qualquer query SQL válida do Spanner diretamente:
+In addition to special commands, you can execute any valid Spanner SQL query directly:
 
 ```sql
 spanner> SELECT * FROM users WHERE user_id = 1;
@@ -731,173 +778,173 @@ spanner> UPDATE users SET email = 'novo@example.com'
     ... WHERE user_id = 100;
 ```
 
-**Características:**
-- Suporte a queries multi-linha (continue digitando após pressionar Enter)
-- Termine a query com `;` (ponto e vírgula) para executar
-- Histórico de comandos com navegação usando setas do teclado
-- Mensagens de erro claras e informativas
+**Features:**
+- Multi-line query support (continue typing after pressing Enter)
+- End the query with `;` (semicolon) to execute
+- Command history with navigation using keyboard arrows
+- Clear and informative error messages
 
 ---
 
-## 🔄 Atualização
+## 🔄 Update
 
-Para atualizar o Spanner Shell para a versão mais recente:
+To update Spanner Shell to the latest version:
 
 ```bash
 ./update.sh
 ```
 
-O script de atualização:
-1. Detecta onde o Spanner Shell está instalado
-2. Clona a versão mais recente do repositório Git
-3. Substitui o binário antigo pelo novo
-4. Exibe a versão atualizada
+The update script:
+1. Detects where Spanner Shell is installed
+2. Clones the latest version from the Git repository
+3. Replaces the old binary with the new one
+4. Displays the updated version
 
-**Nota:** O script de atualização requer que o Git esteja instalado.
+**Note:** The update script requires Git to be installed.
 
 ---
 
-## 🗑️ Desinstalação
+## 🗑️ Uninstallation
 
-Para remover o Spanner Shell do sistema:
+To remove Spanner Shell from the system:
 
 ```bash
 ./uninstall.sh
 ```
 
-O script de desinstalação:
-1. Remove o binário do sistema
-2. Remove o alias `spanner` do arquivo de configuração do shell (se existir)
-3. **Não remove** os perfis e histórico em `~/.spanner-shell/` (você pode removê-los manualmente se desejar)
+The uninstall script:
+1. Removes the binary from the system
+2. Removes the `spanner` alias from the shell configuration file (if it exists)
+3. **Does not remove** profiles and history in `~/.spanner-shell/` (you can remove them manually if desired)
 
 ---
 
-## 💻 Exemplos de Uso
+## 💻 Usage Examples
 
-### Exemplo 1: Exploração Inicial de um Banco de Dados
-
-```sql
-spanner> \dt                    # Lista todas as tabelas
-spanner> \d users               # Descreve a tabela users
-spanner> \count users           # Conta registros
-spanner> \sample users 5        # Mostra 5 exemplos
-spanner> \tail users 10         # Mostra últimos 10 registros
-```
-
-### Exemplo 2: Geração de Código DML
+### Example 1: Initial Database Exploration
 
 ```sql
-spanner> \generate orders       # Gera exemplos de INSERT, UPDATE, etc.
-# Copie e cole os exemplos gerados, ajustando os valores conforme necessário
+spanner> \t                     # List all tables
+spanner> \d users               # Describe users table
+spanner> \n users               # Count records
+spanner> \s users 5             # Show 5 examples
+spanner> \l users 10            # Show last 10 records
 ```
 
-### Exemplo 3: Comparação de Registros
+### Example 2: DML Code Generation
 
 ```sql
-spanner> \diff members 216172782113783808 468374361246531584
-# Compara dois registros e mostra apenas as diferenças
+spanner> \g orders             # Generate INSERT, UPDATE, etc. examples
+# Copy and paste the generated examples, adjusting values as needed
 ```
 
-### Exemplo 4: Monitoramento em Tempo Real
+### Example 3: Record Comparison
 
 ```sql
-spanner> \tail -f logs          # Monitora novos logs em tempo real
-# Pressione Ctrl+C para parar
+spanner> \df members 216172782113783808 468374361246531584
+# Compares two records and shows only the differences
 ```
 
-### Exemplo 5: Importação de Dados
+### Example 4: Real-time Monitoring
+
+```sql
+spanner> \f logs               # Monitor new logs in real-time
+# Press Ctrl+C to stop
+```
+
+### Example 5: Data Import
 
 ```sql
 spanner> \im /path/to/data.sql
 ```
 
-### Exemplo 6: Exportação de Dados
+### Example 6: Data Export
 
 ```sql
-# Exportar resultados para CSV
+# Export results to CSV
 spanner> \e "SELECT * FROM users WHERE created_at > '2024-01-01'" --format csv --output users_2024.csv
 
-# Exportar resultados para JSON
+# Export results to JSON
 spanner> \e "SELECT order_id, total, status FROM orders WHERE status = 'completed'" --format json --output completed_orders.json
 ```
 
-### Exemplo 7: Visualização Formatada em Tabela
+### Example 7: Formatted Table Visualization
 
 ```sql
-# Exibir resultados em tabela formatada
+# Display results in formatted table
 spanner> \p "SELECT user_id, name, email, status FROM users LIMIT 20"
 
-# Tabela com paginação customizada
+# Table with custom pagination
 spanner> \p "SELECT * FROM orders ORDER BY created_at DESC" --page-size 15
 ```
 
-### Exemplo 8: Execução Repetida
+### Example 8: Repeated Execution
 
 ```sql
-spanner> \repeat 100 SELECT COUNT(*) FROM users;
+spanner> \r 100 SELECT COUNT(*) FROM users;
 ```
 
-### Exemplo 9: Trabalhando com Múltiplos Perfis
+### Example 9: Working with Multiple Profiles
 
 ```bash
-# Criar perfis para diferentes ambientes
-spanner-shell --config  # Cria perfil 'dev'
-spanner-shell --config  # Cria perfil 'prod'
+# Create profiles for different environments
+spanner-shell --config  # Create 'dev' profile
+spanner-shell --config  # Create 'prod' profile
 
-# Alternar entre ambientes
-spanner-shell --profile dev   # Ambiente de desenvolvimento
-spanner-shell --profile prod  # Ambiente de produção
+# Switch between environments
+spanner-shell --profile dev   # Development environment
+spanner-shell --profile prod  # Production environment
 ```
 
 ---
 
-## 🐛 Solução de Problemas
+## 🐛 Troubleshooting
 
-### Erro: "gcloud não está instalado"
+### Error: "gcloud is not installed"
 
-**Solução:** Instale o Google Cloud SDK:
+**Solution:** Install Google Cloud SDK:
 ```bash
 brew install --cask google-cloud-sdk
 ```
 
-### Erro: "Nenhuma autenticação ativa encontrada"
+### Error: "No active authentication found"
 
-**Solução:** Autentique-se no gcloud:
+**Solution:** Authenticate with gcloud:
 ```bash
 gcloud auth login
 ```
 
-### Erro: "Perfil não encontrado" ou "Nenhum perfil carregado"
+### Error: "Profile not found" or "No profile loaded"
 
-**Solução:** Você tem algumas opções:
+**Solution:** You have a few options:
 
-1. **Listar perfis disponíveis:**
+1. **List available profiles:**
 ```bash
 spanner-shell --list-profile
 ```
 
-2. **Criar um novo perfil:**
+2. **Create a new profile:**
 ```bash
 spanner-shell --config
 ```
 
-3. **Usar um perfil específico:**
+3. **Use a specific profile:**
 ```bash
-spanner-shell --profile <nome-do-perfil>
+spanner-shell --profile <profile-name>
 ```
 
-### Erro ao conectar com o Emulador
+### Error connecting to Emulator
 
-**Solução:** Certifique-se de que o emulador está rodando:
+**Solution:** Make sure the emulator is running:
 ```bash
-docker ps  # Verifique se o container está ativo
-# Se não estiver, inicie o emulador
+docker ps  # Check if container is active
+# If not, start the emulator
 docker run -d -p 9020:9020 -p 9010:9010 gcr.io/cloud-spanner-emulator/emulator
 ```
 
-### Erro: "jq: command not found" ou erros ao usar `\diff`
+### Error: "jq: command not found" or errors when using `\df`
 
-**Solução:** Instale o `jq`:
+**Solution:** Install `jq`:
 ```bash
 # macOS
 brew install jq
@@ -909,16 +956,16 @@ sudo apt-get install jq
 sudo yum install jq
 ```
 
-Verifique a instalação:
+Verify installation:
 ```bash
 jq --version
 ```
 
-**Nota:** O comando `\diff` requer `jq` para processar respostas JSON do gcloud.
+**Note:** The `\df` command requires `jq` to process JSON responses from gcloud.
 
-### Histórico não está funcionando
+### History is not working
 
-**Solução:** Verifique as permissões do diretório:
+**Solution:** Check directory permissions:
 ```bash
 ls -la ~/.spanner-shell/
 chmod -R 755 ~/.spanner-shell/
@@ -926,32 +973,32 @@ chmod -R 755 ~/.spanner-shell/
 
 ---
 
-## 📝 Notas Adicionais
+## 📝 Additional Notes
 
-- Os perfis são armazenados em `~/.spanner-shell/profiles/`
-- O histórico é armazenado em `~/.spanner-shell/history`
-- O Spanner Shell funciona tanto com Spanner remoto quanto com o emulador local
-- Queries SQL são executadas através do `gcloud spanner databases execute-sql`
-- O histórico é isolado e não interfere com o histórico do seu terminal
-
----
-
-## 📄 Licença
-
-Este projeto está sob a licença especificada no arquivo `LICENSE`.
+- Profiles are stored in `~/.spanner-shell/profiles/`
+- History is stored in `~/.spanner-shell/history`
+- Spanner Shell works with both remote Spanner and local emulator
+- SQL queries are executed through `gcloud spanner databases execute-sql`
+- History is isolated and does not interfere with your terminal history
 
 ---
 
-## 🤝 Contribuindo
+## 📄 License
 
-Contribuições são bem-vindas! Sinta-se à vontade para abrir issues ou pull requests.
-
----
-
-## 📧 Suporte
-
-Para questões, sugestões ou problemas, abra uma issue no repositório do projeto.
+This project is licensed under the license specified in the `LICENSE` file.
 
 ---
 
-**Versão:** 1.0.2
+## 🤝 Contributing
+
+Contributions are welcome! Feel free to open issues or pull requests.
+
+---
+
+## 📧 Support
+
+For questions, suggestions, or issues, open an issue in the project repository.
+
+---
+
+**Version:** 1.0.12
