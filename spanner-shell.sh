@@ -1,5 +1,5 @@
 #!/bin/bash
-SCRIPT_VERSION="1.0.13"
+SCRIPT_VERSION="1.0.14"
 
 # =========================================
 # CURSOR: BLINKING BAR
@@ -1067,15 +1067,307 @@ get_table_metadata() {
 }
 
 # =========================================
+# FUNCTION: Get columns info for anti-pattern analysis
+# =========================================
+get_columns_info() {
+  local table_name="$1"
+  
+  gcloud spanner databases execute-sql ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --format=json \
+    --sql="SELECT column_name, spanner_type, is_nullable, COALESCE(column_default, '') as column_default 
+           FROM information_schema.columns 
+           WHERE table_name = '${table_name}' 
+           ORDER BY ordinal_position;" 2>/dev/null
+}
+
+# =========================================
+# FUNCTION: Get indexes info for anti-pattern analysis
+# =========================================
+get_indexes_info() {
+  local table_name="$1"
+  
+  gcloud spanner databases execute-sql ${DATABASE_ID} \
+    --instance=${INSTANCE_ID} \
+    --quiet \
+    --format=json \
+    --sql="SELECT DISTINCT index_name, index_type 
+           FROM information_schema.index_columns 
+           WHERE table_name = '${table_name}' 
+           AND index_type != 'PRIMARY_KEY';" 2>/dev/null
+}
+
+# =========================================
+# FUNCTION: Format anti-pattern summary (all tables) - AI version
+# =========================================
+format_anti_pattern_summary_ai() {
+  local llm_response="$1"
+  
+  # Check if jq is available
+  if ! command -v jq >/dev/null 2>&1; then
+    echo -e "${RED}❌ jq is not installed. Cannot format results.${NC}"
+    return 1
+  fi
+  
+  # Parse LLM response
+  local tables_analyzed=$(echo "$llm_response" | jq -r '.tables_analyzed | length' 2>/dev/null || echo "0")
+  local total_issues=$(echo "$llm_response" | jq -r '.summary.total_issues' 2>/dev/null || echo "0")
+  local critical_count=$(echo "$llm_response" | jq -r '.summary.critical_count' 2>/dev/null || echo "0")
+  local high_count=$(echo "$llm_response" | jq -r '.summary.high_count' 2>/dev/null || echo "0")
+  local medium_count=$(echo "$llm_response" | jq -r '.summary.medium_count' 2>/dev/null || echo "0")
+  local low_count=$(echo "$llm_response" | jq -r '.summary.low_count' 2>/dev/null || echo "0")
+  
+  # Calculate healthy tables
+  local healthy_count=$((tables_analyzed - total_issues))
+  [[ "$healthy_count" -lt 0 ]] && healthy_count=0
+  
+  # Display header
+  echo
+  echo -e "${WHITE}════════════════════════════════════════════${NC}"
+  echo -e "${WHITE}📊 ANTI-PATTERN ANALYSIS - DATABASE SUMMARY${NC}"
+  echo -e "${WHITE}════════════════════════════════════════════${NC}"
+  echo
+  
+  # Tables analyzed
+  echo -e "${WHITE}Analyzed: ${tables_analyzed} tables${NC}"
+  echo
+  
+  # Summary counts
+  echo -e "${WHITE}-----------${NC}"
+  echo -e "${WHITE}📋 Summary:${NC}"
+  echo -e "${WHITE}-----------${NC}"
+  if [[ "$critical_count" -gt 0 ]]; then
+    echo -e "${RED}❌ ${critical_count} critical issues${NC}"
+  fi
+  if [[ "$high_count" -gt 0 ]]; then
+    echo -e "${RED}🔴 ${high_count} high severity issues${NC}"
+  fi
+  if [[ "$medium_count" -gt 0 ]]; then
+    echo -e "${YELLOW}🟡 ${medium_count} medium severity issues${NC}"
+  fi
+  if [[ "$low_count" -gt 0 ]]; then
+    echo -e "${GREEN}🟢 ${low_count} low severity issues${NC}"
+  fi
+  if [[ "$healthy_count" -gt 0 ]]; then
+    echo -e "${GREEN}✅ ${healthy_count} healthy tables${NC}"
+  fi
+  echo
+  
+  # Top issues (sort by score descending, show top 10)
+  local anti_patterns_count=$(echo "$llm_response" | jq '.anti_patterns | length' 2>/dev/null || echo "0")
+  
+  if [[ "$anti_patterns_count" -gt 0 ]]; then
+    echo -e "${WHITE}--------------${NC}"
+    echo -e "${WHITE}🔥 Top Issues:${NC}"
+    echo -e "${WHITE}--------------${NC}"
+    local count=0
+    
+    # Sort anti-patterns by score descending and display
+    echo "$llm_response" | jq -r '.anti_patterns | sort_by(-.score) | .[] | "\(.table_name)|\(.pattern_type)|\(.score)|\(.severity)"' 2>/dev/null | while IFS='|' read -r table pattern score severity; do
+      count=$((count + 1))
+      
+      local severity_icon=""
+      case "$severity" in
+        "CRITICAL") severity_icon="${RED}❌${NC}" ;;
+        "HIGH") severity_icon="${RED}🔴${NC}" ;;
+        "MEDIUM") severity_icon="${YELLOW}🟡${NC}" ;;
+        "LOW") severity_icon="${GREEN}🟢${NC}" ;;
+        *) severity_icon="${WHITE}ℹ️${NC}" ;;
+      esac
+      
+      echo -e "${WHITE}${count}. ${table}${NC} → ${pattern} ${WHITE}(score: ${score})${NC} ${severity_icon}"
+      
+      # Limit to top 10
+      [[ "$count" -ge 10 ]] && break
+    done
+    echo
+    echo -e "${GRAY}Use \\\\anti-pattern <table> for details${NC}"
+  else
+    echo -e "${GREEN}No anti-patterns detected! All tables are healthy.${NC}"
+  fi
+  
+  echo
+}
+
+# =========================================
+# FUNCTION: Format anti-pattern detailed (single table) - AI version
+# =========================================
+format_anti_pattern_detailed_ai() {
+  local llm_response="$1"
+  local table_name="$2"
+  
+  # Check if jq is available
+  if ! command -v jq >/dev/null 2>&1; then
+    echo -e "${RED}❌ jq is not installed. Cannot format results.${NC}"
+    return 1
+  fi
+  
+  # Display header
+  echo
+  echo -e "${WHITE}════════════════════════════════════════════${NC}"
+  echo -e "${WHITE}🔍 ANTI-PATTERN ANALYSIS — TABLE: ${table_name}${NC}"
+  echo -e "${WHITE}════════════════════════════════════════════${NC}"
+  echo
+  
+  # Filter anti-patterns for this specific table
+  local table_patterns=$(echo "$llm_response" | jq --arg table "$table_name" '.anti_patterns | map(select(.table_name == $table))' 2>/dev/null)
+  local patterns_count=$(echo "$table_patterns" | jq 'length' 2>/dev/null || echo "0")
+  
+  # Check if any patterns detected
+  if [[ "$patterns_count" -eq 0 ]]; then
+    echo -e "${GREEN}✅ No anti-patterns detected!${NC}"
+    echo -e "${GREEN}This table appears to be well-structured.${NC}"
+    echo
+    return 0
+  fi
+  
+  echo -e "${WHITE}Detected Patterns:${NC}"
+  echo
+  
+  # Determine overall risk based on highest severity
+  local max_score=0
+  local overall_severity="LOW"
+  
+  # Format each detected pattern
+  echo "$table_patterns" | jq -c '.[]' 2>/dev/null | while IFS= read -r pattern; do
+    local pattern_type=$(echo "$pattern" | jq -r '.pattern_type')
+    local severity=$(echo "$pattern" | jq -r '.severity')
+    local score=$(echo "$pattern" | jq -r '.score')
+    local impact=$(echo "$pattern" | jq -r '.impact')
+    local signals=$(echo "$pattern" | jq -r '.signals[]' 2>/dev/null)
+    local recommendations=$(echo "$pattern" | jq -r '.recommendations[]' 2>/dev/null)
+    
+    # Update max score and overall severity
+    if [[ "$score" -gt "$max_score" ]]; then
+      max_score="$score"
+      overall_severity="$severity"
+    fi
+    
+    # Determine severity icon and color
+    local severity_icon=""
+    local severity_color="${WHITE}"
+    case "$severity" in
+      "CRITICAL")
+        severity_icon="❌"
+        severity_color="${RED}"
+        ;;
+      "HIGH")
+        severity_icon="🔴"
+        severity_color="${RED}"
+        ;;
+      "MEDIUM")
+        severity_icon="🟡"
+        severity_color="${YELLOW}"
+        ;;
+      "LOW")
+        severity_icon="🟢"
+        severity_color="${GREEN}"
+        ;;
+      *)
+        severity_icon="ℹ️"
+        severity_color="${WHITE}"
+        ;;
+    esac
+    
+    # Calculate separator length based on pattern_type text + icon
+    # Icon + space + text = approximately icon(2) + space(1) + text length
+    local text_with_icon="${severity_icon} ${pattern_type}"
+    local text_length=${#text_with_icon}
+    # Add extra chars for emoji width (emojis take more space)
+    local separator_length=$((text_length + 2))
+    
+    # Generate separator line
+    local separator=$(printf '%*s' "$separator_length" '' | tr ' ' '-')
+    
+    # Display pattern header
+    echo -e "${WHITE}${separator}${NC}"
+    echo -e "${severity_color}${severity_icon} ${pattern_type}${NC}"
+    echo -e "${WHITE}${separator}${NC}"
+    echo -e "${WHITE}Score: ${score} / 100${NC}"
+    echo -e "${WHITE}Severity: ${severity}${NC}"
+    echo
+    
+    # Display signals
+    if [[ -n "$signals" ]]; then
+      echo -e "${WHITE}Signals:${NC}"
+      while IFS= read -r signal; do
+        [[ -n "$signal" ]] && echo -e "${GRAY}- ${signal}${NC}"
+      done <<< "$signals"
+      echo
+    fi
+    
+    # Display impact
+    if [[ -n "$impact" && "$impact" != "null" ]]; then
+      echo -e "${WHITE}Impact:${NC}"
+      echo -e "${GRAY}${impact}${NC}"
+      echo
+    fi
+    
+    # Display recommendations
+    if [[ -n "$recommendations" ]]; then
+      echo -e "${WHITE}Recommendations:${NC}"
+      while IFS= read -r rec; do
+        [[ -n "$rec" ]] && echo -e "${GRAY}- ${rec}${NC}"
+      done <<< "$recommendations"
+      echo
+      echo
+    fi
+  done
+  
+  # Overall risk assessment (calculate from all patterns)
+  max_score=$(echo "$table_patterns" | jq '[.[].score] | max' 2>/dev/null || echo "0")
+  overall_severity=$(echo "$table_patterns" | jq -r 'sort_by(-.score) | .[0].severity' 2>/dev/null || echo "LOW")
+  
+  echo -e "${WHITE}-----------------------${NC}"
+  case "$overall_severity" in
+    "CRITICAL")
+      echo -e "${WHITE}Overall Risk: ${RED}🔴 CRITICAL${NC}"
+      ;;
+    "HIGH")
+      echo -e "${WHITE}Overall Risk: ${RED}🔴 HIGH${NC}"
+      ;;
+    "MEDIUM")
+      echo -e "${WHITE}Overall Risk: ${YELLOW}🟡 MEDIUM${NC}"
+      ;;
+    "LOW")
+      echo -e "${WHITE}Overall Risk: ${GREEN}🟢 LOW${NC}"
+      ;;
+    *)
+      echo -e "${WHITE}Overall Risk: ${GREEN}🟢 HEALTHY${NC}"
+      ;;
+  esac
+  echo -e "${WHITE}-----------------------${NC}"
+  echo
+}
+
+# =========================================
 # FUNCTION: Build hotspot analysis prompt
 # =========================================
 build_hotspot_prompt() {
   local full_ddl="$1"
   local table_name="$2"
   local metadata="$3"
+  local language="${4:-english}"
+  
+  # Language-specific instructions
+  local language_instruction=""
+  case "$language" in
+    "portuguese")
+      language_instruction="LANGUAGE: Respond in Portuguese (Brazil). All text fields (classification, reason, impact, recommendations, risk_explanation, etc.) must be in Portuguese."
+      ;;
+    "spanish")
+      language_instruction="LANGUAGE: Respond in Spanish. All text fields (classification, reason, impact, recommendations, risk_explanation, etc.) must be in Spanish."
+      ;;
+    *)
+      language_instruction="LANGUAGE: Respond in English. All text fields (classification, reason, impact, recommendations, risk_explanation, etc.) must be in English."
+      ;;
+  esac
   
   cat <<EOF
 You are a Google Cloud Spanner expert analyzing hotspot issues.
+
+${language_instruction}
 
 CONTEXT ABOUT HOTSPOTS:
 Hotspots occur when many write operations concentrate on a single partition.
@@ -1135,6 +1427,91 @@ Analyze the table "${table_name}" and return structured JSON in the format:
     "specific actionable recommendation with code examples when applicable"
   ]
 }
+
+IMPORTANT: Return ONLY valid JSON, without any additional text before or after. Do not include explanations, comments, or markdown. Only the pure JSON object.
+EOF
+}
+
+# =========================================
+# FUNCTION: Build anti-pattern analysis prompt
+# =========================================
+build_anti_pattern_prompt() {
+  local ddl_content="$1"
+  local analysis_mode="$2"
+  local table_name="$3"
+  local language="${4:-english}"
+  
+  # Language-specific instructions
+  local language_instruction=""
+  case "$language" in
+    "portuguese")
+      language_instruction="LANGUAGE: Respond in Portuguese (Brazil). All text fields (pattern_type, signals, impact, recommendations) must be in Portuguese."
+      ;;
+    "spanish")
+      language_instruction="LANGUAGE: Respond in Spanish. All text fields (pattern_type, signals, impact, recommendations) must be in Spanish."
+      ;;
+    *)
+      language_instruction="LANGUAGE: Respond in English. All text fields (pattern_type, signals, impact, recommendations) must be in English."
+      ;;
+  esac
+  
+  cat <<EOF
+You are a Google Cloud Spanner expert specializing in database schema anti-patterns.
+
+${language_instruction}
+
+OBJECTIVE:
+Analyze the provided DDL and identify structural anti-patterns that can lead to:
+- Performance degradation
+- Scalability issues
+- Maintenance complexity
+- Data integrity problems
+- High operational costs
+
+DDL TO ANALYZE:
+${ddl_content}
+
+ANALYSIS MODE: ${analysis_mode}
+$(if [[ "$analysis_mode" == "table" && -n "$table_name" ]]; then echo "FOCUS TABLE: ${table_name}"; fi)
+
+IMPORTANT INSTRUCTIONS:
+- Identify ANY structural anti-patterns you find, not limited to specific categories
+- Focus on patterns detectable from DDL alone (no runtime metrics needed)
+- Consider: table design, column patterns, naming conventions, relationships, indexes
+- Common patterns to look for: God Table, Transient Misuse, Reference as Log, Poor Naming, Missing Indexes, Hotspot risks, Over-normalization, Under-normalization
+- Provide specific, actionable recommendations
+- BE CONCISE: Clear explanations in 1-2 sentences per field
+
+Return structured JSON in the following format:
+{
+  "analysis_mode": "full" or "table",
+  "tables_analyzed": ["table1", "table2", ...],
+  "anti_patterns": [
+    {
+      "table_name": "table_name",
+      "pattern_type": "specific pattern name (e.g., God Table, Transient Misuse, Poor Naming)",
+      "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+      "score": 0-100,
+      "signals": ["observable signal 1", "observable signal 2"],
+      "impact": "brief description of performance/maintenance impact (1-2 sentences)",
+      "recommendations": ["actionable recommendation 1", "actionable recommendation 2"]
+    }
+  ],
+  "summary": {
+    "total_issues": number,
+    "critical_count": number,
+    "high_count": number,
+    "medium_count": number,
+    "low_count": number
+  }
+}
+
+SCORING GUIDELINES:
+- 90-100: Almost certain to cause serious problems
+- 70-89: High likelihood of issues
+- 50-69: Moderate risk
+- 30-49: Minor concerns
+- 0-29: Low risk
 
 IMPORTANT: Return ONLY valid JSON, without any additional text before or after. Do not include explanations, comments, or markdown. Only the pure JSON object.
 EOF
@@ -1962,6 +2339,33 @@ if [[ -f "$HISTORY_FILE" ]]; then
 fi
 
 # =========================================
+# FUNCTION: Handle Ctrl+C interrupt
+# =========================================
+handle_interrupt() {
+  echo
+  echo
+  read -p "$(echo -e "${YELLOW}Do you really want to exit Spanner Shell? (y/N): ${NC}")" CONFIRM_EXIT
+  CONFIRM_EXIT="${CONFIRM_EXIT:-n}"
+  
+  if [[ "$CONFIRM_EXIT" =~ ^[Yy]$ ]]; then
+    # Disable history before exiting
+    set +o history
+    # Restore original history before exiting
+    export HISTFILE="$_OLD_HISTFILE"
+    export HISTSIZE="$_OLD_HISTSIZE"
+    clear
+    echo " Shutting down Spanner Shell..."
+    exit 0
+  else
+    echo -e "${GREEN}Continuing...${NC}"
+    # Return to prompt - the read command will be re-executed
+  fi
+}
+
+# Set trap for SIGINT (Ctrl+C)
+trap handle_interrupt SIGINT
+
+# =========================================
 # MAIN LOOP
 # =========================================
 # Enable history only when main loop starts
@@ -2088,7 +2492,8 @@ while true; do
     echo "  \\i <table>                     → List all indexes of the table"
     echo "  \\c                             → Display configuration"
     echo "  \\llm [show|select]             → Show or select LLM configuration"
-    echo "  \\hotspot-ai <table>            → AI-powered hotspot analysis for a table"
+    echo "  \\hotspot <table>               → AI-powered hotspot analysis for a table"
+    echo "  \\anti-pattern [table]          → AI-powered anti-pattern detection"
     echo "  \\im                            → Import content from a sql file with DML instructions"
     echo "  \\id                            → Import content from a sql file with DDL instructions"
     echo "  \\e <query> --format csv|json --output <file> → Export query results to CSV or JSON"
@@ -2252,8 +2657,8 @@ while true; do
     continue
   fi
 
-  # \hotspot-ai <table>
-  if [[ "$SQL" =~ ^\\hotspot-ai[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
+  # \hotspot <table>
+  if [[ "$SQL" =~ ^\\hotspot[[:space:]]+([a-zA-Z0-9_]+)$ ]]; then
     TABLE_NAME="${BASH_REMATCH[1]}"
     
     # Validate table exists
@@ -2305,6 +2710,37 @@ while true; do
       continue
     fi
     
+    # Language selection
+    echo
+    echo -e "${WHITE}Select output language:${NC}"
+    echo -e "${WHITE}  1) English (Default)${NC}"
+    echo -e "${WHITE}  2) Spanish${NC}"
+    echo -e "${WHITE}  3) Portuguese (Brazil)${NC}"
+    echo
+    read -p "$(echo -e "${WHITE}Choose option (1-3) [1]: ${NC}")" LANG_CHOICE
+    LANG_CHOICE="${LANG_CHOICE:-1}"
+    
+    SELECTED_LANGUAGE="english"
+    case "$LANG_CHOICE" in
+      1)
+        SELECTED_LANGUAGE="english"
+        echo -e "${GREEN}✓ Language: English${NC}"
+        ;;
+      2)
+        SELECTED_LANGUAGE="spanish"
+        echo -e "${GREEN}✓ Idioma: Español${NC}"
+        ;;
+      3)
+        SELECTED_LANGUAGE="portuguese"
+        echo -e "${GREEN}✓ Idioma: Português (Brasil)${NC}"
+        ;;
+      *)
+        echo -e "${YELLOW}⚠️  Invalid option, using English (default)${NC}"
+        SELECTED_LANGUAGE="english"
+        ;;
+    esac
+    echo
+    
     # Show progress
     echo -e "${WHITE}🔍 Analyzing hotspot risks for table '${TABLE_NAME}'...${NC}"
     echo -e "${GRAY}   This may take a few seconds...${NC}"
@@ -2326,8 +2762,8 @@ while true; do
       continue
     fi
     
-    # Build prompt
-    PROMPT=$(build_hotspot_prompt "$FULL_DDL" "$TABLE_NAME" "$TABLE_METADATA")
+    # Build prompt with selected language
+    PROMPT=$(build_hotspot_prompt "$FULL_DDL" "$TABLE_NAME" "$TABLE_METADATA" "$SELECTED_LANGUAGE")
     
     # Call OpenAI API
     echo -e "${GRAY}   Calling LLM...${NC}"
@@ -2343,6 +2779,160 @@ while true; do
     
     # Format and display report
     format_hotspot_report "$LLM_RESPONSE"
+    
+    save_to_history "$SQL"
+    continue
+  fi
+
+  # \anti-pattern [table]
+  if [[ "$SQL" =~ ^\\anti-pattern($|[[:space:]]+) ]]; then
+    # Check dependencies
+    if ! command -v curl >/dev/null 2>&1; then
+      echo -e "${RED}❌ curl is not installed.${NC}"
+      echo -e "${WHITE}➡️  Install with:${NC}"
+      echo -e "${GRAY}   macOS: brew install curl${NC}"
+      echo -e "${GRAY}   Linux: sudo apt-get install curl${NC}"
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    if ! command -v jq >/dev/null 2>&1; then
+      echo -e "${RED}❌ jq is not installed.${NC}"
+      echo -e "${WHITE}➡️  Install with:${NC}"
+      echo -e "${GRAY}   macOS: brew install jq${NC}"
+      echo -e "${GRAY}   Linux: sudo apt-get install jq${NC}"
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    # Check LLM configuration
+    CURRENT_PROVIDER=$(get_current_llm_provider)
+    CURRENT_MODEL=$(get_current_llm_model)
+    CURRENT_KEY=$(get_current_llm_api_key)
+    
+    if [[ -z "$CURRENT_KEY" ]]; then
+      echo -e "${RED}❌ LLM not configured.${NC}"
+      echo -e "${WHITE}➡️  Configure with: spanner-shell --llm-setup${NC}"
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    if [[ "$CURRENT_PROVIDER" != "openai" ]]; then
+      echo -e "${RED}❌ Only OpenAI is supported at this time.${NC}"
+      save_to_history "$SQL"
+      continue
+    fi
+    
+    # Language selection
+    echo
+    echo -e "${WHITE}Select output language:${NC}"
+    echo -e "${WHITE}  1) English (Default)${NC}"
+    echo -e "${WHITE}  2) Spanish${NC}"
+    echo -e "${WHITE}  3) Portuguese (Brazil)${NC}"
+    echo
+    read -p "$(echo -e "${WHITE}Choose option (1-3) [1]: ${NC}")" LANG_CHOICE
+    LANG_CHOICE="${LANG_CHOICE:-1}"
+    
+    SELECTED_LANGUAGE="english"
+    case "$LANG_CHOICE" in
+      1)
+        SELECTED_LANGUAGE="english"
+        echo -e "${GREEN}✓ Language: English${NC}"
+        ;;
+      2)
+        SELECTED_LANGUAGE="spanish"
+        echo -e "${GREEN}✓ Idioma: Español${NC}"
+        ;;
+      3)
+        SELECTED_LANGUAGE="portuguese"
+        echo -e "${GREEN}✓ Idioma: Português (Brasil)${NC}"
+        ;;
+      *)
+        echo -e "${YELLOW}⚠️  Invalid option, using English (default)${NC}"
+        SELECTED_LANGUAGE="english"
+        ;;
+    esac
+    echo
+    
+    # Extract table name if provided
+    TABLE_NAME=$(echo "$SQL" | sed 's/^\\anti-pattern[[:space:]]*//' | awk '{print $1}')
+    
+    if [[ -z "$TABLE_NAME" ]]; then
+      # Analyze whole database
+      echo -e "${WHITE}📊 Analyzing database for anti-patterns (AI-powered)...${NC}"
+      echo -e "${GRAY}   This may take a few moments...${NC}"
+      echo
+      
+      # Get full database DDL
+      FULL_DDL=$(get_full_database_ddl)
+      if [[ -z "$FULL_DDL" ]]; then
+        echo -e "${RED}❌ Error obtaining DDL.${NC}"
+        save_to_history "$SQL"
+        continue
+      fi
+      
+      # Build prompt with selected language
+      PROMPT=$(build_anti_pattern_prompt "$FULL_DDL" "full" "" "$SELECTED_LANGUAGE")
+      
+      # Call OpenAI API
+      echo -e "${GRAY}   Calling LLM for analysis...${NC}"
+      LLM_RESPONSE=$(call_openai_api "$PROMPT" "$CURRENT_MODEL" "$CURRENT_KEY" 2>&1)
+      API_STATUS=$?
+      
+      if [[ $API_STATUS -ne 0 ]]; then
+        echo -e "${RED}❌ Error calling LLM API:${NC}"
+        echo -e "${RED}${LLM_RESPONSE}${NC}"
+        save_to_history "$SQL"
+        continue
+      fi
+      
+      # Format and display summary
+      format_anti_pattern_summary_ai "$LLM_RESPONSE"
+      
+    else
+      # Analyze single table
+      # Validate table exists
+      TABLE_CHECK=$(gcloud spanner databases execute-sql ${DATABASE_ID} \
+        --instance=${INSTANCE_ID} \
+        --quiet \
+        --sql="SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_name = '${TABLE_NAME}';" 2>/dev/null)
+      
+      if [[ ! "$TABLE_CHECK" =~ [1-9] ]]; then
+        echo -e "${RED}❌ Table '${TABLE_NAME}' not found.${NC}"
+        save_to_history "$SQL"
+        continue
+      fi
+      
+      echo -e "${WHITE}🔍 Analyzing '${TABLE_NAME}' for anti-patterns (AI-powered)...${NC}"
+      echo -e "${GRAY}   This may take a few moments...${NC}"
+      echo
+      
+      # Get full database DDL (for context)
+      FULL_DDL=$(get_full_database_ddl)
+      if [[ -z "$FULL_DDL" ]]; then
+        echo -e "${RED}❌ Error obtaining DDL.${NC}"
+        save_to_history "$SQL"
+        continue
+      fi
+      
+      # Build prompt focused on specific table with selected language
+      PROMPT=$(build_anti_pattern_prompt "$FULL_DDL" "table" "$TABLE_NAME" "$SELECTED_LANGUAGE")
+      
+      # Call OpenAI API
+      echo -e "${GRAY}   Calling LLM for analysis...${NC}"
+      LLM_RESPONSE=$(call_openai_api "$PROMPT" "$CURRENT_MODEL" "$CURRENT_KEY" 2>&1)
+      API_STATUS=$?
+      
+      if [[ $API_STATUS -ne 0 ]]; then
+        echo -e "${RED}❌ Error calling LLM API:${NC}"
+        echo -e "${RED}${LLM_RESPONSE}${NC}"
+        save_to_history "$SQL"
+        continue
+      fi
+      
+      # Format and display detailed analysis
+      format_anti_pattern_detailed_ai "$LLM_RESPONSE" "$TABLE_NAME"
+    fi
     
     save_to_history "$SQL"
     continue

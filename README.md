@@ -121,7 +121,7 @@ bash --version
 
 ### 5. **jq (JSON Processor)**
 
-Spanner Shell uses `jq` to process JSON responses from gcloud, especially for the `\df` command that compares records and the `\hotspot-ai` command for AI-powered analysis. `jq` is required for full functionality of the tool.
+Spanner Shell uses `jq` to process JSON responses from gcloud, especially for the `\df` command that compares records and the `\hotspot` command for AI-powered analysis. `jq` is required for full functionality of the tool.
 
 **Installation on macOS:**
 ```bash
@@ -145,7 +145,7 @@ jq --version
 
 ### 6. **curl (HTTP Client)**
 
-Required for AI-powered features like `\hotspot-ai` to communicate with OpenAI API.
+Required for AI-powered features like `\hotspot` to communicate with OpenAI API.
 
 **Verification:**
 ```bash
@@ -170,7 +170,7 @@ sudo yum install curl
 
 ### 7. **OpenAI API Key (Optional - for AI Features)**
 
-To use AI-powered commands like `\hotspot-ai`, you need an OpenAI API key.
+To use AI-powered commands like `\hotspot`, you need an OpenAI API key.
 
 **Get your API key:**
 1. Visit https://platform.openai.com/api-keys
@@ -398,7 +398,7 @@ API Token (leave empty to keep current): sk-...
 ```
 
 **Usage After Setup:**
-Once configured, you can use AI-powered commands like `\hotspot-ai` within the shell.
+Once configured, you can use AI-powered commands like `\hotspot` within the shell.
 
 ---
 
@@ -679,11 +679,11 @@ Current LLM Configuration:
 
 **Note:** To configure LLM for the first time, use `spanner-shell --llm-setup` outside the shell.
 
-#### `\hotspot-ai <table>`
+#### `\hotspot <table>`
 **AI-powered hotspot analysis** for Spanner tables. Identifies patterns that may cause write hotspots and provides actionable recommendations.
 
 ```sql
-spanner> \hotspot-ai users
+spanner> \hotspot users
 ```
 
 **What is a Hotspot?**
