@@ -1266,9 +1266,9 @@ format_hotspot_report() {
   
   # Primary Key Analysis
   echo
-  echo -e "${WHITE}------------${NC}"
-  echo -e "${WHITE}Primary Key:${NC}"
-  echo -e "${WHITE}------------${NC}"
+  echo -e "${WHITE}----------------${NC}"
+  echo -e "${WHITE}🔑  Primary Key:${NC}"
+  echo -e "${WHITE}----------------${NC}"
   local pk_columns=$(echo "$json_response" | jq -r '.primary_key_analysis.columns[]? | "\(.name) (\(.type))"' 2>/dev/null | head -5)
   while IFS= read -r pk_line; do
     if [[ -n "$pk_line" ]]; then
@@ -1286,12 +1286,13 @@ format_hotspot_report() {
   local pk_impact=$(echo "$json_response" | jq -r '.primary_key_analysis.impact // ""' 2>/dev/null)
   
   if [[ -n "$pk_classification" ]]; then
+    echo
     if [[ "$pk_classification" == *"Almost certain hotspot"* ]] || [[ "$pk_classification" == *"ALMOST CERTAIN"* ]]; then
       echo -e "${RED}❌ Classification: ${pk_classification}${NC}"
     elif [[ "$pk_classification" == *"High risk"* ]] || [[ "$pk_classification" == *"HIGH"* ]]; then
       echo -e "${YELLOW}⚠️  Classification: ${pk_classification}${NC}"
     else
-      echo -e "${GREEN}✅ Classification: ${pk_classification}${NC}"
+      echo -e "${GREEN}🟢  Classification: ${pk_classification}${NC}"
     fi
     
     if [[ -n "$pk_reason" && "$pk_reason" != "null" ]]; then
@@ -1308,10 +1309,9 @@ format_hotspot_report() {
   # Secondary Indexes
   local idx_count=$(echo "$json_response" | jq '.secondary_indexes | length' 2>/dev/null)
   if [[ "$idx_count" -gt 0 ]]; then
-    echo
-    echo -e "${WHITE}------------------${NC}"
-    echo -e "${WHITE}Secondary Indexes:${NC}"
-    echo -e "${WHITE}------------------${NC}"
+    echo -e "${WHITE}---------------------${NC}"
+    echo -e "${WHITE}🗝️  Secondary Indexes:${NC}"
+    echo -e "${WHITE}---------------------${NC}"
     
     echo "$json_response" | jq -c '.secondary_indexes[]?' 2>/dev/null | while IFS= read -r idx_json; do
       local idx_name=$(echo "$idx_json" | jq -r '.name // ""')
@@ -1335,7 +1335,7 @@ format_hotspot_report() {
         fi
         
         if [[ -n "$idx_avoid" && "$idx_avoid" != "null" ]]; then
-          echo -e "${GRAY}⚠️  Avoid: ${idx_avoid}${NC}"
+          echo -e "${GRAY}⚠️   Avoid: ${idx_avoid}${NC}"
         fi
       fi
     done
@@ -1346,9 +1346,9 @@ format_hotspot_report() {
   local col_risk_count=$(echo "$json_response" | jq '.column_risks | length' 2>/dev/null)
   if [[ "$col_risk_count" -gt 0 ]]; then
     echo
-    echo -e "${WHITE}-------------${NC}"
-    echo -e "${WHITE}Column Risks:${NC}"
-    echo -e "${WHITE}-------------${NC}"
+    echo -e "${WHITE}-----------------${NC}"
+    echo -e "${WHITE}📊  Column Risks:${NC}"
+    echo -e "${WHITE}-----------------${NC}"
     
     echo "$json_response" | jq -c '.column_risks[]?' 2>/dev/null | while IFS= read -r col_json; do
       local col_name=$(echo "$col_json" | jq -r '.column // ""')
@@ -1377,7 +1377,7 @@ format_hotspot_report() {
         fi
         
         if [[ -n "$col_avoid" && "$col_avoid" != "null" ]]; then
-          echo -e "${GRAY}⚠️  Avoid: ${col_avoid}${NC}"
+          echo -e "${GRAY}⚠️   Avoid: ${col_avoid}${NC}"
         fi
         
         echo
@@ -1388,9 +1388,9 @@ format_hotspot_report() {
   
   # Final Score and Risk Level
   echo
-  echo -e "${WHITE}-----------------------${NC}"
+  echo -e "${WHITE}---------------------${NC}"
   echo -e "${WHITE}Score Final: ${final_score} / 100${NC}"
-  echo -e "${WHITE}-----------------------${NC}"
+  echo -e "${WHITE}---------------------${NC}"
   
   case "$risk_level" in
     "ALTO"|"HIGH")
@@ -1421,16 +1421,17 @@ format_hotspot_report() {
   if [[ "$rec_count" -gt 0 ]]; then
     echo
     echo -e "${WHITE}-------------------${NC}"
-    echo -e "${WHITE}✅ Recommendations:${NC}"
+    echo -e "${WHITE}💡 Recommendations:${NC}"
     echo -e "${WHITE}-------------------${NC}"
     echo "$json_response" | jq -r '.recommendations[]?' 2>/dev/null | while IFS= read -r rec; do
       if [[ -n "$rec" ]]; then
-        echo -e "${WHITE}- ${rec}${NC}"
+        echo -e "${GRAY}- ${rec}${NC}"
+        echo
       fi
     done
   fi
   
-  echo
+  
 }
 
 # =========================================
